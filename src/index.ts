@@ -26,6 +26,7 @@ import {
   type FeishuConnectionLock,
 } from "./connection/connection-lock.ts";
 import { isUnexpectedAutonomousStart, visibleSubagentCustomText } from "./messaging/event-routing.ts";
+import { downloadRpcImages, sanitizeImageMessageText, type ImageResource } from "./messaging/image-input.ts";
 import { conversationKey, formatFeishuPrompt } from "./messaging/routing.ts";
 import { replaceCardWithRetry, runSingleCardProgress } from "./messaging/single-card-stream.ts";
 import { failureCard, finalMarkdownCard, THINKING_PROGRESS, toolProgress } from "./messaging/stream-card.ts";
@@ -116,6 +117,7 @@ interface PendingTurn {
   thinkingNoticed: boolean;
   finalText: string;
   failureText: string | null;
+  imageResources: ImageResource[];
   progress: Promise<{ messageId: string | null; error?: unknown }>;
 }
 
@@ -491,7 +493,7 @@ export default function (pi: ExtensionAPI) {
     }
   }
 
-  function createPendingTurn(chatId: string, messageId: string): PendingTurn {
+  function createPendingTurn(chatId: string, messageId: string, imageResources: ImageResource[] = []): PendingTurn {
     const turn: PendingTurn = {
       chatId,
       messageId,
@@ -499,6 +501,7 @@ export default function (pi: ExtensionAPI) {
       thinkingNoticed: false,
       finalText: "",
       failureText: null,
+      imageResources,
       progress: Promise.resolve({ messageId: null }),
     };
     pendingTurns.add(turn);
@@ -544,7 +547,11 @@ export default function (pi: ExtensionAPI) {
 
     conversation.active = turn;
     try {
-      await conversation.session.prompt(prompt);
+      const images = await downloadRpcImages(
+        turn.imageResources,
+        (fileKey) => channel.downloadResource(fileKey, "image"),
+      );
+      await conversation.session.prompt(prompt, images);
       if (!turn.finalText.trim()) {
         const emptyReply = "\n✅ 处理完成，但没有生成文本回复。";
         turn.finalText = emptyReply.trim();
@@ -574,12 +581,13 @@ export default function (pi: ExtensionAPI) {
     senderName?: string;
     messageId: string;
     content?: string;
+    imageResources?: ImageResource[];
   }): Promise<void> {
     if (shuttingDown) {
       await safeSend({ text: "⚠️ 机器人正在重启，请稍后重试。" }, msg.chatId, msg.messageId);
       return;
     }
-    const turn = createPendingTurn(msg.chatId, msg.messageId);
+    const turn = createPendingTurn(msg.chatId, msg.messageId, msg.imageResources);
     try {
       const key = conversationKey(msg);
       const prompt = formatFeishuPrompt(msg);
@@ -776,18 +784,25 @@ export default function (pi: ExtensionAPI) {
     },
     message: async (msg) => {
       const text = (msg.content ?? "").trim();
-      if (!text) {
-        if (msg.resources.length > 0) {
-          await safeSend(
-            { text: "📎 暂不支持图片/文件消息，请直接发文字给我" },
-            msg.chatId,
-            msg.messageId,
-          );
-        }
+      const imageResources: ImageResource[] = msg.resources
+        .filter((resource) => resource.type === "image")
+        .map((resource) => ({ type: "image", fileKey: resource.fileKey }));
+      const unsupportedCount = msg.resources.length - imageResources.length;
+
+      if (!text && imageResources.length === 0) return;
+      if (imageResources.length === 0 && unsupportedCount > 0) {
+        await safeSend(
+          { text: "📎 当前仅支持图片附件（PNG、JPEG、GIF、WebP），暂不支持其他文件类型。" },
+          msg.chatId,
+          msg.messageId,
+        );
         return;
       }
 
-      const sessionCommand = parseSessionControlCommand(text);
+      const promptText = imageResources.length > 0
+        ? sanitizeImageMessageText(text, imageResources.length) + (unsupportedCount > 0 ? `\n\n[另有 ${unsupportedCount} 个非图片附件未处理]` : "")
+        : text;
+      const sessionCommand = imageResources.length === 0 ? parseSessionControlCommand(promptText) : undefined;
       if (sessionCommand) {
         void handleSessionControl({
           chatType: msg.chatType,
@@ -805,7 +820,8 @@ export default function (pi: ExtensionAPI) {
         senderId: msg.senderId,
         senderName: msg.senderName,
         messageId: msg.messageId,
-        content: text,
+        content: promptText,
+        imageResources,
       });
     },
   });

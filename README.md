@@ -24,7 +24,7 @@
 推荐固定到 release tag：
 
 ```bash
-pi install git:github.com/Tieboyh/pi-feishu-bot@v0.3.1
+pi install git:github.com/Tieboyh/pi-feishu-bot@v0.4.0
 ```
 
 也可以临时试用当前主分支：
@@ -43,7 +43,7 @@ pi -e git:github.com/Tieboyh/pi-feishu-bot
 
 1. 在[飞书开放平台](https://open.feishu.cn/)创建企业自建应用。
 2. 开启机器人能力。
-3. 开通 `im:message`、`im:message:readonly`；根据实际能力按需添加其他权限。
+3. 开通 `im:message`、`im:message:readonly`；如需接收图片，再开通 `im:resource`。根据实际能力按需添加其他权限。
 4. 订阅 `im.message.receive_v1`，接收方式选择“使用长连接接收事件”。
 5. 创建并发布应用版本。
 
@@ -129,6 +129,19 @@ Pi 退出、切换会话或 `/reload` 时会自动断开。之后需要重新执
 
 普通消息仍进入当前活跃会话。删除操作不可恢复；群聊中的切换和删除会影响整个群的共享上下文。
 
+### 图片输入
+
+可以在私聊或群聊中直接发送图片，也可以同时附带文字说明。扩展从飞书下载图片、校验真实文件格式并以 Pi RPC `ImageContent` 传给当前会话；飞书资源 key 不会进入模型提示词。
+
+限制：
+
+- 支持 PNG、JPEG、GIF、WebP。
+- 单条消息最多 4 张。
+- 单张最多 10 MB，总计最多 20 MB。
+- 当前使用的模型必须支持视觉输入；不支持时会返回处理失败信息。
+- 普通文件、音频、视频和贴纸暂不作为 Agent 附件处理。
+- 图片会随对话内容写入受保护的 Pi JSONL 会话历史；删除对应历史会话时一并删除。
+
 ## 会话与数据
 
 运行数据保存在：
@@ -170,7 +183,7 @@ pi-feishu-bot/
 │   ├── index.ts                 # Pi 扩展入口与飞书通道编排
 │   ├── config/                  # 交互配置与凭据落盘
 │   ├── connection/              # 长连接独占锁
-│   ├── messaging/               # 消息路由、卡片与流式输出
+│   ├── messaging/               # 消息路由、图片输入、卡片与流式输出
 │   ├── runtime/                 # 隔离 RPC Agent 与 subagent 策略
 │   └── sessions/                # 会话生命周期、索引、切换与存储安全
 ├── tests/

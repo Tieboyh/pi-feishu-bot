@@ -10,6 +10,7 @@ import {
   intersectSubagentCapabilityCeilings,
   type ResolvedSubagentCapabilityCeiling,
 } from "pi-subagents/capability-ceiling";
+import type { RpcImageContent } from "../messaging/image-input.ts";
 import { FEISHU_AGENT_TOOLS, feishuCapabilityCeiling } from "./agent-runtime.ts";
 
 const require = createRequire(import.meta.url);
@@ -194,7 +195,7 @@ export class RpcAgentSession {
     this.promptCompletion = null;
   }
 
-  async prompt(message: string): Promise<void> {
+  async prompt(message: string, images: readonly RpcImageContent[] = []): Promise<void> {
     if (this.promptCompletion) throw new Error("Feishu Agent RPC prompt already active.");
     if (this.deadError) throw this.deadError;
     this.promptSawAgentStart = false;
@@ -208,7 +209,7 @@ export class RpcAgentSession {
       this.promptCompletion = { resolve, reject, timer };
     });
     try {
-      await this.request("prompt", { message });
+      await this.request("prompt", { message, ...(images.length > 0 ? { images } : {}) });
       // Extension/slash commands do not start an agent turn and therefore do
       // not emit agent_settled. An ordered state read is their terminal boundary.
       const state = await this.request("get_state");

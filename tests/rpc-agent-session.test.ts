@@ -63,6 +63,15 @@ test("real RPC bash sees only provider/capability sentinels", async () => {
   }
 });
 
+test("image prompts forward Pi ImageContent through RPC", async () => {
+  const script = `const r=require('readline').createInterface({input:process.stdin});r.on('line',l=>{const x=JSON.parse(l);if(x.type==='prompt'){const ok=x.images?.[0]?.type==='image'&&x.images[0].data==='iVBORw=='&&x.images[0].mimeType==='image/png';console.log(JSON.stringify({type:'response',id:x.id,command:'prompt',success:ok,error:ok?undefined:'missing image'}));if(ok){console.log(JSON.stringify({type:'agent_start'}));console.log(JSON.stringify({type:'agent_settled'}))}}else if(x.type==='get_state')console.log(JSON.stringify({type:'response',id:x.id,command:'get_state',success:true,data:{isStreaming:false,pendingMessageCount:0}}))})`;
+  const child = spawn(process.execPath, ["-e", script], { stdio: ["pipe", "pipe", "pipe"] });
+  const session = RpcAgentSession.fromProcessForTest(child, { requestTimeoutMs: 500, promptTimeoutMs: 500, shutdownTimeoutMs: 30 });
+  sessions.push(session);
+  await session.prompt("inspect", [{ type: "image", data: "iVBORw==", mimeType: "image/png" }]);
+  expect(session.pendingRequestCount).toBe(0);
+});
+
 test("ordinary prompt waits through agent_end until agent_settled", async () => {
   const script = `const r=require('readline').createInterface({input:process.stdin});r.on('line',l=>{const x=JSON.parse(l);if(x.type==='prompt'){console.log(JSON.stringify({type:'response',id:x.id,command:'prompt',success:true}));console.log(JSON.stringify({type:'agent_start'}));console.log(JSON.stringify({type:'agent_end'}));setTimeout(()=>console.log(JSON.stringify({type:'agent_settled'})),40)}else if(x.type==='get_state')console.log(JSON.stringify({type:'response',id:x.id,command:'get_state',success:true,data:{isStreaming:true,pendingMessageCount:0}}))})`;
   const child = spawn(process.execPath, ["-e", script], { stdio: ["pipe", "pipe", "pipe"] });
