@@ -3,7 +3,7 @@ import { mkdtemp } from "node:fs/promises";
 import { spawn } from "node:child_process";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { buildSafeRpcEnv, FEISHU_SUBAGENT_SYSTEM_PROMPT, OFFICIAL_PROVIDER_ENV, RpcAgentSession } from "./rpc-agent-session.ts";
+import { buildSafeRpcEnv, FEISHU_SUBAGENT_SYSTEM_PROMPT, OFFICIAL_PROVIDER_ENV, RpcAgentSession } from "../src/runtime/rpc-agent-session.ts";
 
 const sessions: RpcAgentSession[] = [];
 afterEach(async () => { await Promise.allSettled(sessions.splice(0).map((session) => session.dispose())); });

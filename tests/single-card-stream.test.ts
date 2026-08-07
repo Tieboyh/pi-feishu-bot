@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
-import { replaceCardWithRetry, runSingleCardProgress } from "./single-card-stream.ts";
-import { failureCard, finalMarkdownCard } from "./stream-card.ts";
+import { replaceCardWithRetry, runSingleCardProgress } from "../src/messaging/single-card-stream.ts";
+import { failureCard, finalMarkdownCard } from "../src/messaging/stream-card.ts";
 
 class FakeChannel {
   sends: Array<{ to: string; input: any; options: any }> = [];

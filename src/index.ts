@@ -17,15 +17,22 @@ import { randomUUID } from "node:crypto";
 import { existsSync, readFileSync } from "node:fs";
 import { chmod, mkdir, readFile, rename, unlink, writeFile } from "node:fs/promises";
 import { join, resolve, sep } from "node:path";
-import { conversationKey, formatFeishuPrompt } from "./routing.ts";
-import { isSubagentProcess } from "./agent-runtime.ts";
-import { failureCard, finalMarkdownCard, THINKING_PROGRESS, toolProgress } from "./stream-card.ts";
-import { replaceCardWithRetry, runSingleCardProgress } from "./single-card-stream.ts";
-import { isRestorableSessionFile, secureEnvFileBeforeRead, secureSessionFile, secureSessionStorage } from "./storage-security.ts";
-import { RpcAgentSession, resolveSubagentsInstall } from "./rpc-agent-session.ts";
-import { initializeConversationOwned } from "./conversation-lifecycle.ts";
-import { createGenerationIsCurrent, selectSafeIdleVictim, SerialCapacityGate } from "./conversation-pool.ts";
-import { MaskedSecretInput, persistFeishuEnv } from "./setup.ts";
+import { MaskedSecretInput, persistFeishuEnv } from "./config/setup.ts";
+import {
+  acquireConnectionLock,
+  FeishuConnectionBusyError,
+  readConnectionLock,
+  releaseConnectionLock,
+  type FeishuConnectionLock,
+} from "./connection/connection-lock.ts";
+import { isUnexpectedAutonomousStart, visibleSubagentCustomText } from "./messaging/event-routing.ts";
+import { conversationKey, formatFeishuPrompt } from "./messaging/routing.ts";
+import { replaceCardWithRetry, runSingleCardProgress } from "./messaging/single-card-stream.ts";
+import { failureCard, finalMarkdownCard, THINKING_PROGRESS, toolProgress } from "./messaging/stream-card.ts";
+import { isSubagentProcess } from "./runtime/agent-runtime.ts";
+import { RpcAgentSession, resolveSubagentsInstall } from "./runtime/rpc-agent-session.ts";
+import { initializeConversationOwned } from "./sessions/conversation-lifecycle.ts";
+import { createGenerationIsCurrent, selectSafeIdleVictim, SerialCapacityGate } from "./sessions/conversation-pool.ts";
 import {
   emptySessionIndex,
   findManagedSession,
@@ -37,17 +44,10 @@ import {
   type ChatSessionState,
   type SessionControlCommand,
   type SessionIndexV2,
-} from "./session-control.ts";
-import { isUnexpectedAutonomousStart, visibleSubagentCustomText } from "./event-routing.ts";
-import {
-  acquireConnectionLock,
-  FeishuConnectionBusyError,
-  readConnectionLock,
-  releaseConnectionLock,
-  type FeishuConnectionLock,
-} from "./connection-lock.ts";
+} from "./sessions/session-control.ts";
+import { isRestorableSessionFile, secureEnvFileBeforeRead, secureSessionFile, secureSessionStorage } from "./sessions/storage-security.ts";
 
-export { conversationKey, formatFeishuPrompt } from "./routing.ts";
+export { conversationKey, formatFeishuPrompt } from "./messaging/routing.ts";
 
 // ---------------------------------------------------------------------------
 // 配置

@@ -6,7 +6,7 @@ import {
   parseSessionControlCommand,
   uniqueDefaultSessionName,
   type ChatSessionState,
-} from "./session-control.ts";
+} from "../src/sessions/session-control.ts";
 
 test("natural-language session controls are deterministic and explicit", () => {
   expect(parseSessionControlCommand("开一个新会话")).toEqual({ type: "new" });

@@ -6,6 +6,7 @@ state/
 connection.lock*
 *.lock
 *.lock.*
+tests/
 *.test.ts
 test-*.ts
 lock-contender.ts

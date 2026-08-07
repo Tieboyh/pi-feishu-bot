@@ -2,7 +2,7 @@ import { expect, test } from "bun:test";
 import { mkdtemp } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { RpcAgentSession, resolvePolicyExtension, resolveSubagentsInstall } from "./rpc-agent-session.ts";
+import { RpcAgentSession, resolvePolicyExtension, resolveSubagentsInstall } from "../src/runtime/rpc-agent-session.ts";
 
 test("two active new/restored Feishu sessions have process-isolated extension runtimes", async () => {
   const cwd = process.cwd();

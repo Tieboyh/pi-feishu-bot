@@ -1,4 +1,4 @@
-import { acquireConnectionLock, releaseConnectionLock } from "./connection-lock.ts";
+import { acquireConnectionLock, releaseConnectionLock } from "../../src/connection/connection-lock.ts";
 
 const lockPath = process.argv[2];
 const holdMs = Number(process.argv[3] ?? 400);

@@ -4,7 +4,7 @@ import {
   FEISHU_DELEGATE_AGENTS,
   feishuCapabilityCeiling,
   isSubagentProcess,
-} from "./agent-runtime.ts";
+} from "../src/runtime/agent-runtime.ts";
 import {
   encodeSubagentCapabilityCeiling,
   registerSubagentCapabilityCeiling,

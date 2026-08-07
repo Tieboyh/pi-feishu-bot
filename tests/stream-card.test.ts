@@ -5,7 +5,7 @@ import {
   INITIAL_PROGRESS,
   THINKING_PROGRESS,
   toolProgress,
-} from "./stream-card.ts";
+} from "../src/messaging/stream-card.ts";
 
 function cardText(card: any): string {
   return card.body.elements.map((element: any) => element.content ?? "").join("\n");

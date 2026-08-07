@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { createGenerationIsCurrent, selectSafeIdleVictim, SerialCapacityGate } from "./conversation-pool.ts";
+import { createGenerationIsCurrent, selectSafeIdleVictim, SerialCapacityGate } from "../src/sessions/conversation-pool.ts";
 
 const item = (lastUsedAt: number, safe: boolean, active: unknown | null = null, queuedTurnCount = 0) => ({
   lastUsedAt, active, queuedTurnCount, session: { isSafeToEvict: () => safe },

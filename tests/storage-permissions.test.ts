@@ -2,7 +2,7 @@ import { expect, test } from "bun:test";
 import { access, mkdtemp, mkdir, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { isRestorableSessionFile, secureEnvFileBeforeRead, secureSessionFile, secureSessionStorage } from "./storage-security.ts";
+import { isRestorableSessionFile, secureEnvFileBeforeRead, secureSessionFile, secureSessionStorage } from "../src/sessions/storage-security.ts";
 
 test("env file is restricted before reading and Windows compatibility is controlled", async () => {
   const root = await mkdtemp(join(tmpdir(), "feishu-env-permissions-"));

@@ -9,6 +9,5 @@
     "target": "es2022",
     "types": ["node"]
   },
-  "include": ["*.ts"],
-  "exclude": ["*.test.ts", "test-*.ts", "lock-contender.ts"]
+  "include": ["src/**/*.ts"]
 }

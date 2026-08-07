@@ -7,7 +7,7 @@ import {
   FeishuConnectionBusyError,
   readConnectionLock,
   releaseConnectionLock,
-} from "./connection-lock.ts";
+} from "../src/connection/connection-lock.ts";
 
 const tempDirs: string[] = [];
 afterEach(async () => {
@@ -69,7 +69,7 @@ describe("connection lock", () => {
 
   test("多进程竞争时只有一个进程获取锁", async () => {
     const path = await lockPath();
-    const contender = join(import.meta.dir, "lock-contender.ts");
+    const contender = join(import.meta.dir, "fixtures", "lock-contender.ts");
     const processes = Array.from({ length: 20 }, () =>
       Bun.spawn([process.execPath, contender, path, "500"], {
         stdout: "pipe",

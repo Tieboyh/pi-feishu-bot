@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { conversationKey, formatFeishuPrompt } from "./routing.ts";
+import { conversationKey, formatFeishuPrompt } from "../src/messaging/routing.ts";
 
 describe("conversationKey", () => {
   test("同一群聊忽略发送者并共享会话", () => {

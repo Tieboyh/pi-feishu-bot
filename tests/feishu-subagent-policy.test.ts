@@ -1,6 +1,6 @@
 import { expect, test } from "bun:test";
 import type { ExtensionAPI, ToolCallEvent } from "@earendil-works/pi-coding-agent";
-import feishuSubagentPolicy, { foregroundOnlyViolation, OFFICIAL_SUBAGENT_ACTIONS, SAFE_MANAGEMENT_ACTIONS } from "./feishu-subagent-policy.ts";
+import feishuSubagentPolicy, { foregroundOnlyViolation, OFFICIAL_SUBAGENT_ACTIONS, SAFE_MANAGEMENT_ACTIONS } from "../src/runtime/feishu-subagent-policy.ts";
 
 const expectedSafe = new Set([
   "list", "get", "models", "doctor", "status",

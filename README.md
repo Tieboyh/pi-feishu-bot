@@ -24,7 +24,7 @@
 推荐固定到 release tag：
 
 ```bash
-pi install git:github.com/Tieboyh/pi-feishu-bot@v0.3.0
+pi install git:github.com/Tieboyh/pi-feishu-bot@v0.3.1
 ```
 
 也可以临时试用当前主分支：
@@ -161,6 +161,27 @@ Pi 退出、切换会话或 `/reload` 时会自动断开。之后需要重新执
 - 禁止 detached/background 委派。
 - 子 Agent 不可继续委派。
 - 管理动作仅开放只读检查及停止/中断等安全动作。
+
+## 项目结构
+
+```text
+pi-feishu-bot/
+├── src/
+│   ├── index.ts                 # Pi 扩展入口与飞书通道编排
+│   ├── config/                  # 交互配置与凭据落盘
+│   ├── connection/              # 长连接独占锁
+│   ├── messaging/               # 消息路由、卡片与流式输出
+│   ├── runtime/                 # 隔离 RPC Agent 与 subagent 策略
+│   └── sessions/                # 会话生命周期、索引、切换与存储安全
+├── tests/
+│   ├── fixtures/                # 测试辅助进程
+│   └── *.test.ts                # 单元与集成测试
+├── .github/workflows/           # CI
+├── package.json                 # Pi Package 清单
+└── README.md
+```
+
+运行时状态不会写入源码目录，统一保存在 `~/.pi/agent/state/pi-feishu-bot/`。
 
 ## 开发
 

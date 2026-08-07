@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { isUnexpectedAutonomousStart, visibleSubagentCustomText } from "./event-routing.ts";
+import { isUnexpectedAutonomousStart, visibleSubagentCustomText } from "../src/messaging/event-routing.ts";
 
 test("unexpected autonomous starts are detected only without an active turn", () => {
   expect(isUnexpectedAutonomousStart({ type: "agent_start" }, false)).toBe(true);

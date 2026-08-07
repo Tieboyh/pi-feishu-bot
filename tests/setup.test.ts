@@ -7,7 +7,7 @@ import {
   normalizeFeishuSetup,
   persistFeishuEnv,
   renderFeishuEnv,
-} from "./setup.ts";
+} from "../src/config/setup.ts";
 
 test("setup values reject empty or whitespace-bearing credentials", () => {
   expect(() => normalizeFeishuSetup({ appId: "", appSecret: "secret", requireMention: true })).toThrow("不能为空");

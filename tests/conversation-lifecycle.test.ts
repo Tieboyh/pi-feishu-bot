@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { initializeConversationOwned } from "./conversation-lifecycle.ts";
+import { initializeConversationOwned } from "../src/sessions/conversation-lifecycle.ts";
 
 for (const failure of ["secure", "ceiling", "subscribe", "commit"] as const) {
   test(`conversation initialization cleans exactly once when ${failure} fails`, async () => {
