@@ -1,5 +1,5 @@
 import { chmodSync } from "node:fs";
-import { chmod, mkdir, open, readdir } from "node:fs/promises";
+import { chmod, mkdir, readdir } from "node:fs/promises";
 import { join } from "node:path";
 
 export function secureEnvFileBeforeRead(file: string, platform = process.platform): void {
@@ -8,13 +8,15 @@ export function secureEnvFileBeforeRead(file: string, platform = process.platfor
 }
 
 export async function secureSessionFile(file: string): Promise<void> {
-  // Pi allocates the persistent session path before the first JSONL record is
-  // written. Materialize that path securely instead of assuming it exists.
-  const handle = await open(file, "a", 0o600);
+  if (process.platform === "win32") return;
   try {
-    if (process.platform !== "win32") await handle.chmod(0o600);
-  } finally {
-    await handle.close();
+    await chmod(file, 0o600);
+  } catch (error) {
+    // Pi reserves a session path before the first turn writes the JSONL file.
+    // Creating that path here makes Pi treat it as an existing empty session,
+    // which suppresses later model turns. The private 0700 parent directory
+    // protects it until we chmod the file immediately after the first turn.
+    if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
   }
 }
 

@@ -526,6 +526,9 @@ export default function (pi: ExtensionAPI) {
       pushChunk(turn.feed, `\n\n❌ 处理失败：${turn.failureText}`);
       console.error(`[feishu-bot] ❌ 会话 ${conversation.key} 处理失败:`, error);
     } finally {
+      await secureSessionFile(conversation.session.sessionFile).catch((error) => {
+        console.error("[feishu-bot] ❌ 会话文件权限设置失败:", errorMessage(error));
+      });
       conversation.active = null;
       await replaceTerminalCard(turn);
       pendingTurns.delete(turn);
