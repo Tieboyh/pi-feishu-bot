@@ -1,3 +1,5 @@
+import type { Readable } from "node:stream";
+
 export interface RpcImageContent {
   type: "image";
   data: string;
@@ -27,6 +29,27 @@ export function detectImageMimeType(buffer: Buffer): string | undefined {
   if (buffer.length >= 6 && ["GIF87a", "GIF89a"].includes(buffer.subarray(0, 6).toString("ascii"))) return "image/gif";
   if (buffer.length >= 12 && buffer.subarray(0, 4).toString("ascii") === "RIFF" && buffer.subarray(8, 12).toString("ascii") === "WEBP") return "image/webp";
   return undefined;
+}
+
+export async function downloadFeishuMessageImage(
+  rawClient: {
+    im: { v1: { messageResource: { get(payload: {
+      path: { message_id: string; file_key: string };
+      params: { type: string };
+    }): Promise<{ getReadableStream(): Readable }> } } };
+  },
+  messageId: string,
+  fileKey: string,
+): Promise<Buffer> {
+  const response = await rawClient.im.v1.messageResource.get({
+    path: { message_id: messageId, file_key: fileKey },
+    params: { type: "image" },
+  });
+  const chunks: Buffer[] = [];
+  for await (const chunk of response.getReadableStream()) {
+    chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
+  }
+  return Buffer.concat(chunks);
 }
 
 export function sanitizeImageMessageText(content: string, imageCount: number): string {

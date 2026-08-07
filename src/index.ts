@@ -26,7 +26,7 @@ import {
   type FeishuConnectionLock,
 } from "./connection/connection-lock.ts";
 import { isUnexpectedAutonomousStart, visibleSubagentCustomText } from "./messaging/event-routing.ts";
-import { downloadRpcImages, sanitizeImageMessageText, type ImageResource } from "./messaging/image-input.ts";
+import { downloadFeishuMessageImage, downloadRpcImages, sanitizeImageMessageText, type ImageResource } from "./messaging/image-input.ts";
 import { conversationKey, formatFeishuPrompt } from "./messaging/routing.ts";
 import { replaceCardWithRetry, runSingleCardProgress } from "./messaging/single-card-stream.ts";
 import { failureCard, finalMarkdownCard, THINKING_PROGRESS, toolProgress } from "./messaging/stream-card.ts";
@@ -549,7 +549,9 @@ export default function (pi: ExtensionAPI) {
     try {
       const images = await downloadRpcImages(
         turn.imageResources,
-        (fileKey) => channel.downloadResource(fileKey, "image"),
+        // Incoming user resources must use messageResource.get. The simpler
+        // image.get endpoint only permits images uploaded by this bot.
+        (fileKey) => downloadFeishuMessageImage(channel.rawClient, turn.messageId, fileKey),
       );
       await conversation.session.prompt(prompt, images);
       if (!turn.finalText.trim()) {

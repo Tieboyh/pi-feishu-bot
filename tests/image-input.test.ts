@@ -1,6 +1,8 @@
 import { expect, test } from "bun:test";
+import { Readable } from "node:stream";
 import {
   detectImageMimeType,
+  downloadFeishuMessageImage,
   downloadRpcImages,
   sanitizeImageMessageText,
 } from "../src/messaging/image-input.ts";
@@ -25,6 +27,21 @@ test("Feishu image keys are removed from the model-visible prompt", () => {
   expect(prompt).toContain("已附加 1 张图片");
   expect(prompt).not.toContain(key);
   expect(sanitizeImageMessageText(`![image](${key})`, 1)).toBe("请查看并分析我发送的图片。");
+});
+
+test("incoming images use the message resource endpoint, not bot-owned image.get", async () => {
+  let payload: unknown;
+  const buffer = await downloadFeishuMessageImage({
+    im: { v1: { messageResource: { get: async (next) => {
+      payload = next;
+      return { getReadableStream: () => Readable.from([png.subarray(0, 4), png.subarray(4)]) };
+    } } } },
+  }, "om_message", "img_user_resource");
+  expect(payload).toEqual({
+    path: { message_id: "om_message", file_key: "img_user_resource" },
+    params: { type: "image" },
+  });
+  expect(buffer).toEqual(png);
 });
 
 test("downloaded images are validated, bounded, and encoded for Pi RPC", async () => {
