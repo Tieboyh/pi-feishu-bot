@@ -24,7 +24,7 @@
 推荐固定到 release tag：
 
 ```bash
-pi install git:github.com/Tieboyh/pi-feishu-bot@v0.2.0
+pi install git:github.com/Tieboyh/pi-feishu-bot@v0.2.1
 ```
 
 也可以临时试用当前主分支：

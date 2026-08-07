@@ -1,5 +1,5 @@
 import { chmodSync } from "node:fs";
-import { chmod, mkdir, readdir } from "node:fs/promises";
+import { chmod, mkdir, open, readdir } from "node:fs/promises";
 import { join } from "node:path";
 
 export function secureEnvFileBeforeRead(file: string, platform = process.platform): void {
@@ -8,7 +8,14 @@ export function secureEnvFileBeforeRead(file: string, platform = process.platfor
 }
 
 export async function secureSessionFile(file: string): Promise<void> {
-  await chmod(file, 0o600);
+  // Pi allocates the persistent session path before the first JSONL record is
+  // written. Materialize that path securely instead of assuming it exists.
+  const handle = await open(file, "a", 0o600);
+  try {
+    if (process.platform !== "win32") await handle.chmod(0o600);
+  } finally {
+    await handle.close();
+  }
 }
 
 export async function secureSessionStorage(dir: string): Promise<void> {

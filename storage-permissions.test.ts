@@ -1,8 +1,8 @@
 import { expect, test } from "bun:test";
-import { mkdtemp, mkdir, stat, writeFile } from "node:fs/promises";
+import { mkdtemp, mkdir, readFile, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { secureEnvFileBeforeRead, secureSessionStorage } from "./storage-security.ts";
+import { secureEnvFileBeforeRead, secureSessionFile, secureSessionStorage } from "./storage-security.ts";
 
 test("env file is restricted before reading and Windows compatibility is controlled", async () => {
   const root = await mkdtemp(join(tmpdir(), "feishu-env-permissions-"));
@@ -12,6 +12,14 @@ test("env file is restricted before reading and Windows compatibility is control
   expect((await stat(env)).mode & 0o777).toBe(0o600);
   secureEnvFileBeforeRead(join(root, "missing.env"), "win32");
   expect(() => secureEnvFileBeforeRead(join(root, "missing.env"), "darwin")).toThrow();
+});
+
+test("a Pi-allocated session path is securely materialized before its first record", async () => {
+  const root = await mkdtemp(join(tmpdir(), "feishu-session-file-"));
+  const jsonl = join(root, "not-created-yet.jsonl");
+  await secureSessionFile(jsonl);
+  expect(await readFile(jsonl, "utf8")).toBe("");
+  if (process.platform !== "win32") expect((await stat(jsonl)).mode & 0o777).toBe(0o600);
 });
 
 test("session storage is recursively restricted to 0700/0600", async () => {
