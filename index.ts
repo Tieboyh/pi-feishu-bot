@@ -13,9 +13,10 @@ import {
   type AgentSessionEvent,
   type ExtensionAPI,
 } from "@earendil-works/pi-coding-agent";
+import { randomUUID } from "node:crypto";
 import { existsSync, readFileSync } from "node:fs";
-import { chmod, mkdir, readFile, rename, writeFile } from "node:fs/promises";
-import { join } from "node:path";
+import { chmod, mkdir, readFile, rename, unlink, writeFile } from "node:fs/promises";
+import { join, resolve, sep } from "node:path";
 import { conversationKey, formatFeishuPrompt } from "./routing.ts";
 import { isSubagentProcess } from "./agent-runtime.ts";
 import { failureCard, finalMarkdownCard, THINKING_PROGRESS, toolProgress } from "./stream-card.ts";
@@ -25,6 +26,18 @@ import { RpcAgentSession, resolveSubagentsInstall } from "./rpc-agent-session.ts
 import { initializeConversationOwned } from "./conversation-lifecycle.ts";
 import { createGenerationIsCurrent, selectSafeIdleVictim, SerialCapacityGate } from "./conversation-pool.ts";
 import { MaskedSecretInput, persistFeishuEnv } from "./setup.ts";
+import {
+  emptySessionIndex,
+  findManagedSession,
+  formatSessionList,
+  migrateSessionIndex,
+  normalizeSessionName,
+  parseSessionControlCommand,
+  uniqueDefaultSessionName,
+  type ChatSessionState,
+  type SessionControlCommand,
+  type SessionIndexV2,
+} from "./session-control.ts";
 import { isUnexpectedAutonomousStart, visibleSubagentCustomText } from "./event-routing.ts";
 import {
   acquireConnectionLock,
@@ -114,11 +127,6 @@ interface Conversation {
   active: PendingTurn | null;
   lastUsedAt: number;
   queuedTurnCount: number;
-}
-
-interface SessionIndex {
-  version: 1;
-  sessions: Record<string, string>;
 }
 
 // ---------------------------------------------------------------------------
@@ -238,8 +246,10 @@ export default function (pi: ExtensionAPI) {
 
   const conversations = new Map<string, Conversation>();
   const pendingTurns = new Set<PendingTurn>();
-  let sessionIndex: SessionIndex = { version: 1, sessions: {} };
+  let sessionIndex: SessionIndexV2 = emptySessionIndex();
   let indexWrite = Promise.resolve();
+  const pendingNewNames = new Map<string, string>();
+  const pendingDeletes = new Map<string, { sessionId: string; senderId: string; expiresAt: number }>();
   let botCwd = "";
   let shuttingDown = false;
   let lifecycleGeneration = 0;
@@ -260,52 +270,69 @@ export default function (pi: ExtensionAPI) {
     return current;
   }
 
+  async function writeSessionIndex(): Promise<void> {
+    const tempFile = SESSION_INDEX_FILE + ".tmp";
+    const snapshot = JSON.stringify(sessionIndex, null, 2) + "\n";
+    await writeFile(tempFile, snapshot, { encoding: "utf8", mode: 0o600 });
+    await chmod(tempFile, 0o600);
+    await rename(tempFile, SESSION_INDEX_FILE);
+    await chmod(SESSION_INDEX_FILE, 0o600);
+  }
+
+  function mutateSessionIndex(mutate: (index: SessionIndexV2) => void): Promise<void> {
+    const transaction = indexWrite.catch(() => {}).then(async () => {
+      const previous = structuredClone(sessionIndex);
+      mutate(sessionIndex);
+      try {
+        await writeSessionIndex();
+      } catch (error) {
+        sessionIndex = previous;
+        throw error;
+      }
+    });
+    indexWrite = transaction.then(() => {}, () => {});
+    return transaction;
+  }
+
   async function loadSessionIndex(): Promise<void> {
     await secureSessionStorage(SESSION_DIR);
     try {
       const parsed = JSON.parse(await readFile(SESSION_INDEX_FILE, "utf8"));
-      const sessions: Record<string, string> = {};
-      if (parsed?.version === 1 && parsed.sessions && typeof parsed.sessions === "object") {
-        for (const [key, value] of Object.entries(parsed.sessions)) {
-          if (typeof value === "string") sessions[key] = value;
-        }
-      }
-      sessionIndex = { version: 1, sessions };
+      sessionIndex = migrateSessionIndex(parsed, randomUUID);
+      if (parsed?.version !== 2) await writeSessionIndex();
     } catch (error: any) {
       if (error?.code !== "ENOENT") {
         console.error("[feishu-bot] ⚠️ 会话索引读取失败，将创建新索引:", errorMessage(error));
       }
-      sessionIndex = { version: 1, sessions: {} };
+      sessionIndex = emptySessionIndex();
     }
   }
 
   function commitSessionMapping(key: string, sessionFile: string): Promise<void> {
-    // 映射变更、落盘和失败回滚必须处于同一个串行事务，避免不同 key 的
-    // 并发创建把尚未确认的映射顺带写入磁盘。
-    const transaction = indexWrite.catch(() => {}).then(async () => {
-      const previousPath = sessionIndex.sessions[key];
-      if (previousPath === sessionFile) return;
-
-      sessionIndex.sessions[key] = sessionFile;
-      try {
-        const tempFile = SESSION_INDEX_FILE + ".tmp";
-        const snapshot = JSON.stringify(sessionIndex, null, 2) + "\n";
-        await writeFile(tempFile, snapshot, { encoding: "utf8", mode: 0o600 });
-        await chmod(tempFile, 0o600);
-        await rename(tempFile, SESSION_INDEX_FILE);
-        await chmod(SESSION_INDEX_FILE, 0o600);
-      } catch (error) {
-        if (previousPath) sessionIndex.sessions[key] = previousPath;
-        else delete sessionIndex.sessions[key];
-        throw error;
+    const requestedName = pendingNewNames.get(key);
+    const transaction = mutateSessionIndex((index) => {
+      const now = new Date().toISOString();
+      const chat = index.chats[key] ??= { sessions: [] };
+      const active = chat.sessions.find((entry) => entry.id === chat.activeId);
+      if (active) {
+        active.file = sessionFile;
+        active.lastUsedAt = now;
+        return;
       }
+      const id = randomUUID();
+      const name = requestedName ?? uniqueDefaultSessionName(chat);
+      chat.sessions.push({ id, name, file: sessionFile, createdAt: now, lastUsedAt: now });
+      chat.activeId = id;
     });
-    // 尾链始终恢复为 fulfilled，但调用者仍收到本次 transaction 的错误。
-    indexWrite = transaction.then(
-      () => {},
-      () => {},
-    );
-    return transaction;
+    return transaction.then(() => { pendingNewNames.delete(key); });
+  }
+
+  function touchActiveSession(key: string): Promise<void> {
+    return mutateSessionIndex((index) => {
+      const chat = index.chats[key];
+      const active = chat?.sessions.find((entry) => entry.id === chat.activeId);
+      if (active) active.lastUsedAt = new Date().toISOString();
+    });
   }
 
   async function forceDisconnectChannel(): Promise<void> {
@@ -346,7 +373,9 @@ export default function (pi: ExtensionAPI) {
       throw new Error("Agent runtime 尚未初始化");
     }
 
-    const savedPath = sessionIndex.sessions[key];
+    const chatState = sessionIndex.chats[key];
+    const activeSession = chatState?.sessions.find((entry) => entry.id === chatState.activeId);
+    const savedPath = activeSession?.file;
     const restorablePath = isRestorableSessionFile(savedPath) ? savedPath : undefined;
     if (conversations.size >= maxConversations && !(await evictSafeIdleConversation(true))) {
       throw new Error(`飞书 Agent 会话已达安全上限（${maxConversations}），且没有可安全释放的空闲会话。`);
@@ -530,6 +559,9 @@ export default function (pi: ExtensionAPI) {
         console.error("[feishu-bot] ❌ 会话文件权限设置失败:", errorMessage(error));
       });
       conversation.active = null;
+      await touchActiveSession(conversation.key).catch((error) => {
+        console.error("[feishu-bot] ⚠️ 会话最后使用时间保存失败:", errorMessage(error));
+      });
       await replaceTerminalCard(turn);
       pendingTurns.delete(turn);
     }
@@ -570,6 +602,171 @@ export default function (pi: ExtensionAPI) {
     }
   }
 
+  function requireIdleConversation(key: string): Conversation | undefined {
+    const conversation = conversations.get(key);
+    if (conversation && (conversation.active !== null || conversation.queuedTurnCount > 0 || !conversation.session.isSafeToEvict())) {
+      throw new Error("当前会话仍有任务正在处理，请等待完成后再管理会话。");
+    }
+    return conversation;
+  }
+
+  async function disposeLoadedConversation(key: string): Promise<void> {
+    const conversation = requireIdleConversation(key);
+    if (!conversation) return;
+    conversations.delete(key);
+    conversation.unsubscribe();
+    await conversation.session.dispose();
+  }
+
+  function getChatState(key: string): ChatSessionState | undefined {
+    return sessionIndex.chats[key];
+  }
+
+  function currentManagedSession(key: string) {
+    const chat = getChatState(key);
+    return chat?.sessions.find((entry) => entry.id === chat.activeId);
+  }
+
+  async function switchManagedSession(key: string, targetId: string): Promise<string> {
+    const chat = getChatState(key);
+    const target = chat?.sessions.find((entry) => entry.id === targetId);
+    if (!chat || !target) throw new Error("找不到指定会话。");
+    if (chat.activeId === target.id) return `当前已经是会话「${target.name}」。`;
+    const hasHistory = isRestorableSessionFile(target.file);
+    await disposeLoadedConversation(key);
+    await mutateSessionIndex((index) => {
+      const state = index.chats[key]!;
+      const previousId = state.activeId;
+      state.activeId = target.id;
+      state.previousId = previousId;
+      const selected = state.sessions.find((entry) => entry.id === target.id)!;
+      selected.lastUsedAt = new Date().toISOString();
+    });
+    return hasHistory
+      ? `✅ 已切换到会话「${target.name}」，下一条消息将继续该会话的历史上下文。`
+      : `✅ 已切换到会话「${target.name}」。该会话尚无可恢复记录，下一条消息将从全新上下文开始。`;
+  }
+
+  async function handleSessionControl(
+    msg: { chatType: "p2p" | "group"; chatId: string; senderId: string; messageId: string },
+    command: SessionControlCommand,
+  ): Promise<void> {
+    const key = conversationKey(msg);
+    const reply = async (text: string) => safeSend({ text }, msg.chatId, msg.messageId);
+    try {
+      if (command.type === "list") {
+        await reply(formatSessionList(getChatState(key)));
+        return;
+      }
+      if (command.type === "current") {
+        const current = currentManagedSession(key);
+        await reply(current
+          ? `当前会话：${current.name}\nID: ${current.id.slice(0, 8)}\n创建时间：${current.createdAt.replace("T", " ").slice(0, 16)}`
+          : "当前聊天还没有会话；发送普通消息后会自动创建。");
+        return;
+      }
+      if (command.type === "cancel-delete") {
+        const pending = pendingDeletes.get(key);
+        if (pending?.senderId === msg.senderId) pendingDeletes.delete(key);
+        await reply(pending?.senderId === msg.senderId ? "已取消删除会话。" : "当前没有由你发起的待确认删除操作。");
+        return;
+      }
+      if (command.type === "delete") {
+        const target = findManagedSession(getChatState(key), command.target);
+        if (!target) throw new Error(`找不到会话「${command.target}」。请先说“查看历史会话”。`);
+        pendingDeletes.set(key, { sessionId: target.id, senderId: msg.senderId, expiresAt: Date.now() + 5 * 60_000 });
+        await reply(`⚠️ 删除会话「${target.name}」将永久删除其上下文。\n请在 5 分钟内回复：“确认删除会话 ${target.name}”\n回复“取消删除”可取消。`);
+        return;
+      }
+      if (command.type === "confirm-delete") {
+        const pending = pendingDeletes.get(key);
+        if (!pending || pending.senderId !== msg.senderId || pending.expiresAt < Date.now()) {
+          pendingDeletes.delete(key);
+          throw new Error("没有有效的待确认删除操作，请先说“删除会话 会话名”。");
+        }
+        const chat = getChatState(key);
+        const target = chat?.sessions.find((entry) => entry.id === pending.sessionId);
+        if (!target) {
+          pendingDeletes.delete(key);
+          throw new Error("待删除会话已经不存在。");
+        }
+        if (command.target) {
+          const confirmed = findManagedSession(chat, command.target);
+          if (confirmed?.id !== target.id) throw new Error("确认的会话名称与待删除会话不一致。");
+        }
+        await capacityGate.run(async () => {
+          if (chat?.activeId === target.id) await disposeLoadedConversation(key);
+          await mutateSessionIndex((index) => {
+            const state = index.chats[key];
+            if (!state) return;
+            state.sessions = state.sessions.filter((entry) => entry.id !== target.id);
+            if (state.activeId === target.id) {
+              const fallback = [...state.sessions].sort((a, b) => b.lastUsedAt.localeCompare(a.lastUsedAt))[0];
+              state.activeId = fallback?.id;
+            }
+            if (state.previousId === target.id) delete state.previousId;
+            if (state.sessions.length === 0) delete index.chats[key];
+          });
+        });
+        pendingDeletes.delete(key);
+        const sessionRoot = resolve(SESSION_DIR) + sep;
+        if (resolve(target.file).startsWith(sessionRoot)) {
+          await unlink(target.file).catch((error: any) => {
+            if (error?.code !== "ENOENT") console.error("[feishu-bot] ⚠️ 历史会话文件删除失败:", errorMessage(error));
+          });
+        }
+        await reply(`✅ 已删除会话「${target.name}」。`);
+        return;
+      }
+      if (command.type === "switch") {
+        const target = findManagedSession(getChatState(key), command.target);
+        if (!target) throw new Error(`找不到会话「${command.target}」。请先说“查看历史会话”。`);
+        const result = await capacityGate.run(() => switchManagedSession(key, target.id));
+        await reply(result);
+        return;
+      }
+      if (command.type === "restore") {
+        const chat = getChatState(key);
+        const target = chat?.sessions.find((entry) => entry.id === chat.previousId);
+        if (!target) throw new Error("没有可以恢复的上一个会话。");
+        const result = await capacityGate.run(() => switchManagedSession(key, target.id));
+        await reply(result);
+        return;
+      }
+      if (command.type === "new") {
+        const result = await capacityGate.run(async () => {
+          const existingChat = getChatState(key);
+          const name = command.name ? normalizeSessionName(command.name) : uniqueDefaultSessionName(existingChat);
+          if (existingChat?.sessions.some((entry) => entry.name.toLocaleLowerCase() === name.toLocaleLowerCase())) {
+            throw new Error(`会话名称「${name}」已存在，请换一个名称。`);
+          }
+          await disposeLoadedConversation(key);
+          await mutateSessionIndex((index) => {
+            const state = index.chats[key] ??= { sessions: [] };
+            state.previousId = state.activeId;
+            delete state.activeId;
+          });
+          pendingNewNames.set(key, name);
+          try {
+            await createConversation(key, lifecycleGeneration);
+          } catch (error) {
+            pendingNewNames.delete(key);
+            await mutateSessionIndex((index) => {
+              const state = index.chats[key];
+              if (state?.previousId) state.activeId = state.previousId;
+            }).catch(() => {});
+            throw error;
+          }
+          return name;
+        });
+        pendingDeletes.delete(key);
+        await reply(`✅ 已创建并切换到新会话「${result}」，下一条普通消息将使用全新上下文。`);
+      }
+    } catch (error) {
+      await reply(`❌ 会话操作失败：${errorMessage(error)}`);
+    }
+  }
+
   channel.on({
     error: (error) => {
       console.error(
@@ -587,6 +784,17 @@ export default function (pi: ExtensionAPI) {
             msg.messageId,
           );
         }
+        return;
+      }
+
+      const sessionCommand = parseSessionControlCommand(text);
+      if (sessionCommand) {
+        void handleSessionControl({
+          chatType: msg.chatType,
+          chatId: msg.chatId,
+          senderId: msg.senderId,
+          messageId: msg.messageId,
+        }, sessionCommand);
         return;
       }
 
@@ -626,6 +834,8 @@ export default function (pi: ExtensionAPI) {
     if (idleSweep) clearInterval(idleSweep);
     idleSweep = null;
     pendingTurns.clear();
+    pendingNewNames.clear();
+    pendingDeletes.clear();
     await indexWrite.catch(() => {});
     botCwd = "";
   }
@@ -773,9 +983,10 @@ export default function (pi: ExtensionAPI) {
         (conversation) => conversation.active !== null,
       ).length;
       const owner = ownedLock ?? (await readConnectionLock(CONNECTION_LOCK_FILE));
+      const historicalCount = Object.values(sessionIndex.chats).reduce((total, chat) => total + chat.sessions.length, 0);
       ctx.ui.notify(
         owner
-          ? `飞书: ${status?.state ?? "由其他进程持有"} | PID: ${owner.pid} | session: ${owner.sessionId} | cwd: ${owner.cwd} | 子会话: ${conversations.size} | 活跃: ${activeCount}`
+          ? `飞书: ${status?.state ?? "由其他进程持有"} | PID: ${owner.pid} | session: ${owner.sessionId} | cwd: ${owner.cwd} | 已加载: ${conversations.size} | 历史会话: ${historicalCount} | 活跃: ${activeCount}`
           : "飞书: 未连接（执行 /connect-feishu）",
         "info",
       );

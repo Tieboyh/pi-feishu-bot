@@ -1,6 +1,6 @@
 {
   "name": "@tieboyh/pi-feishu-bot",
-  "version": "0.2.3",
+  "version": "0.3.0",
   "description": "Feishu/Lark bot bridge for Pi with isolated persistent conversations and streaming cards",
   "type": "module",
   "main": "index.ts",
@@ -14,7 +14,7 @@
     "LICENSE"
   ],
   "scripts": {
-    "test": "bun test --timeout 20000 routing.test.ts connection-lock.test.ts stream-card.test.ts single-card-stream.test.ts agent-runtime.test.ts feishu-subagent-policy.test.ts rpc-agent-session.test.ts loader-integration.test.ts conversation-lifecycle.test.ts conversation-pool.test.ts event-routing.test.ts storage-permissions.test.ts setup.test.ts",
+    "test": "bun test --timeout 20000 routing.test.ts connection-lock.test.ts stream-card.test.ts single-card-stream.test.ts agent-runtime.test.ts feishu-subagent-policy.test.ts rpc-agent-session.test.ts loader-integration.test.ts conversation-lifecycle.test.ts conversation-pool.test.ts event-routing.test.ts storage-permissions.test.ts setup.test.ts session-control.test.ts",
     "check": "bun build index.ts --target=node --external @earendil-works/pi-coding-agent --external @larksuiteoapi/node-sdk --outfile=/tmp/pi-feishu-bot-check.js && tsc -p tsconfig.json",
     "verify": "npm test && npm run check",
     "prepack": "npm run verify"
