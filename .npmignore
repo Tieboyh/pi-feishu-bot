@@ -1,0 +1,13 @@
+node_modules/
+.env
+sessions/
+state/
+.pi-subagents/
+connection.lock*
+*.lock
+*.lock.*
+*.test.ts
+test-*.ts
+lock-contender.ts
+*.tgz
+.DS_Store

@@ -1,0 +1,60 @@
+{
+  "name": "@tieboyh/pi-feishu-bot",
+  "version": "0.1.0",
+  "description": "Feishu/Lark bot bridge for Pi with isolated persistent conversations and streaming cards",
+  "type": "module",
+  "main": "index.ts",
+  "files": [
+    "*.ts",
+    "!*.test.ts",
+    "!test-*.ts",
+    "!lock-contender.ts",
+    ".env.example",
+    "README.md",
+    "LICENSE"
+  ],
+  "scripts": {
+    "test": "bun test --timeout 20000 routing.test.ts connection-lock.test.ts stream-card.test.ts single-card-stream.test.ts agent-runtime.test.ts feishu-subagent-policy.test.ts rpc-agent-session.test.ts loader-integration.test.ts conversation-lifecycle.test.ts conversation-pool.test.ts event-routing.test.ts storage-permissions.test.ts",
+    "check": "bun build index.ts --target=node --external @earendil-works/pi-coding-agent --external @larksuiteoapi/node-sdk --outfile=/tmp/pi-feishu-bot-check.js && tsc -p tsconfig.json",
+    "verify": "npm test && npm run check",
+    "prepack": "npm run verify"
+  },
+  "keywords": [
+    "pi-package",
+    "pi-extension",
+    "feishu",
+    "lark",
+    "bot"
+  ],
+  "pi": {
+    "extensions": [
+      "./index.ts"
+    ]
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Tieboyh/pi-feishu-bot.git"
+  },
+  "homepage": "https://github.com/Tieboyh/pi-feishu-bot#readme",
+  "bugs": {
+    "url": "https://github.com/Tieboyh/pi-feishu-bot/issues"
+  },
+  "license": "MIT",
+  "engines": {
+    "node": ">=22"
+  },
+  "dependencies": {
+    "@larksuiteoapi/node-sdk": "^1.72.0",
+    "pi-subagents": "^0.42.1",
+    "proper-lockfile": "^4.1.2"
+  },
+  "peerDependencies": {
+    "@earendil-works/pi-coding-agent": "*"
+  },
+  "devDependencies": {
+    "@earendil-works/pi-coding-agent": "^0.84.0",
+    "@types/node": "^24.13.3",
+    "@types/proper-lockfile": "^4.1.4",
+    "typescript": "^5.9.3"
+  }
+}
