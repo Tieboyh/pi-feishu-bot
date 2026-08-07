@@ -2,7 +2,7 @@ import { expect, test } from "bun:test";
 import { access, mkdtemp, mkdir, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { secureEnvFileBeforeRead, secureSessionFile, secureSessionStorage } from "./storage-security.ts";
+import { isRestorableSessionFile, secureEnvFileBeforeRead, secureSessionFile, secureSessionStorage } from "./storage-security.ts";
 
 test("env file is restricted before reading and Windows compatibility is controlled", async () => {
   const root = await mkdtemp(join(tmpdir(), "feishu-env-permissions-"));
@@ -19,6 +19,18 @@ test("a Pi-allocated path remains absent until Pi writes its first record", asyn
   const jsonl = join(root, "not-created-yet.jsonl");
   await secureSessionFile(jsonl);
   await expect(access(jsonl)).rejects.toThrow();
+});
+
+test("only non-empty session files are restorable", async () => {
+  const root = await mkdtemp(join(tmpdir(), "feishu-restorable-"));
+  const empty = join(root, "empty.jsonl");
+  const populated = join(root, "populated.jsonl");
+  await writeFile(empty, "");
+  await writeFile(populated, "{}\n");
+  expect(isRestorableSessionFile(undefined)).toBe(false);
+  expect(isRestorableSessionFile(join(root, "missing.jsonl"))).toBe(false);
+  expect(isRestorableSessionFile(empty)).toBe(false);
+  expect(isRestorableSessionFile(populated)).toBe(true);
 });
 
 test("session storage is recursively restricted to 0700/0600", async () => {

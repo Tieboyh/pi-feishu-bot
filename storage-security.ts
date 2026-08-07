@@ -1,10 +1,20 @@
-import { chmodSync } from "node:fs";
+import { chmodSync, statSync } from "node:fs";
 import { chmod, mkdir, readdir } from "node:fs/promises";
 import { join } from "node:path";
 
 export function secureEnvFileBeforeRead(file: string, platform = process.platform): void {
   if (platform === "win32") return;
   chmodSync(file, 0o600);
+}
+
+export function isRestorableSessionFile(file: string | undefined): file is string {
+  if (!file) return false;
+  try {
+    const stat = statSync(file);
+    return stat.isFile() && stat.size > 0;
+  } catch {
+    return false;
+  }
 }
 
 export async function secureSessionFile(file: string): Promise<void> {

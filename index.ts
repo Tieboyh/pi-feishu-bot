@@ -20,7 +20,7 @@ import { conversationKey, formatFeishuPrompt } from "./routing.ts";
 import { isSubagentProcess } from "./agent-runtime.ts";
 import { failureCard, finalMarkdownCard, THINKING_PROGRESS, toolProgress } from "./stream-card.ts";
 import { replaceCardWithRetry, runSingleCardProgress } from "./single-card-stream.ts";
-import { secureEnvFileBeforeRead, secureSessionFile, secureSessionStorage } from "./storage-security.ts";
+import { isRestorableSessionFile, secureEnvFileBeforeRead, secureSessionFile, secureSessionStorage } from "./storage-security.ts";
 import { RpcAgentSession, resolveSubagentsInstall } from "./rpc-agent-session.ts";
 import { initializeConversationOwned } from "./conversation-lifecycle.ts";
 import { createGenerationIsCurrent, selectSafeIdleVictim, SerialCapacityGate } from "./conversation-pool.ts";
@@ -347,7 +347,7 @@ export default function (pi: ExtensionAPI) {
     }
 
     const savedPath = sessionIndex.sessions[key];
-    const restorablePath = savedPath && existsSync(savedPath) ? savedPath : undefined;
+    const restorablePath = isRestorableSessionFile(savedPath) ? savedPath : undefined;
     if (conversations.size >= maxConversations && !(await evictSafeIdleConversation(true))) {
       throw new Error(`飞书 Agent 会话已达安全上限（${maxConversations}），且没有可安全释放的空闲会话。`);
     }
