@@ -24,7 +24,7 @@
 推荐固定到 release tag：
 
 ```bash
-pi install git:github.com/Tieboyh/pi-feishu-bot@v0.1.0
+pi install git:github.com/Tieboyh/pi-feishu-bot@v0.2.0
 ```
 
 也可以临时试用当前主分支：
@@ -51,13 +51,21 @@ pi -e git:github.com/Tieboyh/pi-feishu-bot
 
 ## 配置凭据
 
-扩展优先读取进程环境变量，其次读取：
+推荐直接在 Pi TUI 中运行：
+
+```text
+/feishu-setup
+```
+
+交互流程会依次输入 App ID、以掩码输入 App Secret，并选择群聊响应策略。确认后扩展以 `0600` 权限写入配置文件并自动执行 `/reload`；密钥不会显示在界面、写入 Pi 会话或发送给模型。随后执行 `/connect-feishu` 即可。
+
+交互配置仅支持 Pi TUI。扩展也支持手动配置：进程环境变量优先，其次读取：
 
 ```text
 ~/.pi/agent/state/pi-feishu-bot/.env
 ```
 
-安全创建配置文件：
+手动安全创建配置文件：
 
 ```bash
 install -d -m 700 ~/.pi/agent/state/pi-feishu-bot
@@ -80,7 +88,7 @@ FEISHU_MAX_CONVERSATIONS=20
 FEISHU_IDLE_CONVERSATION_MS=1800000
 ```
 
-也可以直接在启动 Pi 的环境中设置这些变量。修改配置后执行 `/reload`。使用 `/feishu-setup` 可以检查凭据是否已经被扩展读取；该命令不会显示密钥内容。
+也可以直接在启动 Pi 的环境中设置这些变量。手动修改配置后执行 `/reload`。
 
 ## 使用
 
@@ -96,7 +104,7 @@ FEISHU_IDLE_CONVERSATION_MS=1800000
 
 | 命令 | 说明 |
 |---|---|
-| `/feishu-setup` | 显示凭据配置路径及是否缺少必要配置 |
+| `/feishu-setup` | 交互输入并安全保存 App ID、掩码 App Secret 和群聊响应策略 |
 | `/connect-feishu` | 获取独占锁并建立飞书长连接 |
 | `/disconnect-feishu` | 断开连接、关闭会话进程并释放锁 |
 | `/feishu` | 查看连接、锁持有者、工作区和活跃会话数量 |

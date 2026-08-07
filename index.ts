@@ -24,6 +24,7 @@ import { secureEnvFileBeforeRead, secureSessionFile, secureSessionStorage } from
 import { RpcAgentSession, resolveSubagentsInstall } from "./rpc-agent-session.ts";
 import { initializeConversationOwned } from "./conversation-lifecycle.ts";
 import { createGenerationIsCurrent, selectSafeIdleVictim, SerialCapacityGate } from "./conversation-pool.ts";
+import { MaskedSecretInput, persistFeishuEnv } from "./setup.ts";
 import { isUnexpectedAutonomousStart, visibleSubagentCustomText } from "./event-routing.ts";
 import {
   acquireConnectionLock,
@@ -159,18 +160,47 @@ export default function (pi: ExtensionAPI) {
   if (isSubagentProcess()) return;
 
   pi.registerCommand("feishu-setup", {
-    description: "显示飞书机器人凭据配置路径和当前配置状态",
+    description: "交互配置飞书 App ID、App Secret 和群聊 @ 策略",
     handler: async (_args: string, ctx: any) => {
-      const missing = [
-        !APP_ID ? "FEISHU_APP_ID" : "",
-        !APP_SECRET ? "FEISHU_APP_SECRET" : "",
-      ].filter(Boolean);
-      ctx.ui.notify(
-        missing.length === 0
-          ? `飞书凭据已配置。配置文件：${ENV_FILE}`
-          : `缺少 ${missing.join("、")}。请设置环境变量，或写入 ${ENV_FILE}（文件权限 0600），然后执行 /reload。`,
-        missing.length === 0 ? "info" : "warning",
-      );
+      if (ctx.mode !== "tui") {
+        ctx.ui.notify(`交互配置仅支持 Pi TUI；也可以手动写入 ${ENV_FILE}。`, "error");
+        return;
+      }
+      if ((APP_ID || APP_SECRET) && !(await ctx.ui.confirm(
+        "重新配置飞书机器人",
+        "现有凭据将被新输入覆盖，是否继续？",
+      ))) return;
+
+      const appId = await ctx.ui.input("飞书 App ID", "cli_xxxxxxxxxxxxxxxx");
+      if (appId === undefined) return;
+      const appSecret: string | null | undefined = await ctx.ui.custom((tui: any, _theme: any, _keybindings: any, done: (value: string | null) => void) => {
+        const input = new MaskedSecretInput("飞书 App Secret（输入内容已隐藏）", () => tui.requestRender());
+        input.onSubmit = (value) => done(value);
+        input.onCancel = () => done(null);
+        return input;
+      });
+      if (appSecret === null || appSecret === undefined) return;
+      const mentionChoice = await ctx.ui.select("群聊响应策略", [
+        "仅在 @机器人时响应（推荐）",
+        "响应群内所有文字消息",
+      ]);
+      if (mentionChoice === undefined) return;
+
+      try {
+        await persistFeishuEnv(STATE_DIR, ENV_FILE, {
+          appId,
+          appSecret,
+          requireMention: mentionChoice.startsWith("仅在"),
+          ...(fileEnv.FEISHU_MAX_CONVERSATIONS === undefined ? {} : { maxConversations: fileEnv.FEISHU_MAX_CONVERSATIONS }),
+          ...(fileEnv.FEISHU_IDLE_CONVERSATION_MS === undefined ? {} : { idleConversationMs: fileEnv.FEISHU_IDLE_CONVERSATION_MS }),
+        });
+      } catch (error) {
+        ctx.ui.notify(`飞书配置保存失败：${errorMessage(error)}`, "error");
+        return;
+      }
+      ctx.ui.notify(`飞书配置已安全写入 ${ENV_FILE}，正在重新加载扩展。`, "info");
+      await ctx.reload();
+      return;
     },
   });
 

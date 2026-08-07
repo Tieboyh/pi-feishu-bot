@@ -1,6 +1,6 @@
 {
   "name": "@tieboyh/pi-feishu-bot",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Feishu/Lark bot bridge for Pi with isolated persistent conversations and streaming cards",
   "type": "module",
   "main": "index.ts",
@@ -14,7 +14,7 @@
     "LICENSE"
   ],
   "scripts": {
-    "test": "bun test --timeout 20000 routing.test.ts connection-lock.test.ts stream-card.test.ts single-card-stream.test.ts agent-runtime.test.ts feishu-subagent-policy.test.ts rpc-agent-session.test.ts loader-integration.test.ts conversation-lifecycle.test.ts conversation-pool.test.ts event-routing.test.ts storage-permissions.test.ts",
+    "test": "bun test --timeout 20000 routing.test.ts connection-lock.test.ts stream-card.test.ts single-card-stream.test.ts agent-runtime.test.ts feishu-subagent-policy.test.ts rpc-agent-session.test.ts loader-integration.test.ts conversation-lifecycle.test.ts conversation-pool.test.ts event-routing.test.ts storage-permissions.test.ts setup.test.ts",
     "check": "bun build index.ts --target=node --external @earendil-works/pi-coding-agent --external @larksuiteoapi/node-sdk --outfile=/tmp/pi-feishu-bot-check.js && tsc -p tsconfig.json",
     "verify": "npm test && npm run check",
     "prepack": "npm run verify"
@@ -49,10 +49,12 @@
     "proper-lockfile": "^4.1.2"
   },
   "peerDependencies": {
-    "@earendil-works/pi-coding-agent": "*"
+    "@earendil-works/pi-coding-agent": "*",
+    "@earendil-works/pi-tui": "*"
   },
   "devDependencies": {
     "@earendil-works/pi-coding-agent": "^0.84.0",
+    "@earendil-works/pi-tui": "^0.84.0",
     "@types/node": "^24.13.3",
     "@types/proper-lockfile": "^4.1.4",
     "typescript": "^5.9.3"
