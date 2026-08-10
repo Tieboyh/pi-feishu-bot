@@ -9,6 +9,9 @@ export interface FeishuSetupValues {
   requireMention: boolean;
   maxConversations?: string;
   idleConversationMs?: string;
+  groupContextMessages?: string;
+  groupContextLookbackMs?: string;
+  groupContextSource?: string;
 }
 
 function requiredCredential(value: string, label: string): string {
@@ -25,6 +28,9 @@ export function normalizeFeishuSetup(values: FeishuSetupValues): FeishuSetupValu
     requireMention: values.requireMention,
     ...(values.maxConversations === undefined ? {} : { maxConversations: values.maxConversations }),
     ...(values.idleConversationMs === undefined ? {} : { idleConversationMs: values.idleConversationMs }),
+    ...(values.groupContextMessages === undefined ? {} : { groupContextMessages: values.groupContextMessages }),
+    ...(values.groupContextLookbackMs === undefined ? {} : { groupContextLookbackMs: values.groupContextLookbackMs }),
+    ...(values.groupContextSource === undefined ? {} : { groupContextSource: values.groupContextSource }),
   };
 }
 
@@ -37,6 +43,9 @@ export function renderFeishuEnv(values: FeishuSetupValues): string {
   ];
   if (normalized.maxConversations) lines.push(`FEISHU_MAX_CONVERSATIONS=${normalized.maxConversations}`);
   if (normalized.idleConversationMs) lines.push(`FEISHU_IDLE_CONVERSATION_MS=${normalized.idleConversationMs}`);
+  if (normalized.groupContextMessages) lines.push(`FEISHU_GROUP_CONTEXT_MESSAGES=${normalized.groupContextMessages}`);
+  if (normalized.groupContextLookbackMs) lines.push(`FEISHU_GROUP_CONTEXT_LOOKBACK_MS=${normalized.groupContextLookbackMs}`);
+  if (normalized.groupContextSource) lines.push(`FEISHU_GROUP_CONTEXT_SOURCE=${normalized.groupContextSource}`);
   return `${lines.join("\n")}\n`;
 }
 

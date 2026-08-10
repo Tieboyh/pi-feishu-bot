@@ -26,6 +26,7 @@ import {
   type FeishuConnectionLock,
 } from "./connection/connection-lock.ts";
 import { isUnexpectedAutonomousStart, visibleSubagentCustomText } from "./messaging/event-routing.ts";
+import { fetchRecentGroupContext, fetchRecentGroupContextViaLarkCli, runLarkCliRead } from "./messaging/group-context.ts";
 import { downloadFeishuMessageImage, downloadRpcImages, sanitizeImageMessageText, type ImageResource } from "./messaging/image-input.ts";
 import { conversationKey, formatFeishuPrompt } from "./messaging/routing.ts";
 import { replaceCardWithRetry, runSingleCardProgress } from "./messaging/single-card-stream.ts";
@@ -203,6 +204,9 @@ export default function (pi: ExtensionAPI) {
           requireMention: mentionChoice.startsWith("仅在"),
           ...(fileEnv.FEISHU_MAX_CONVERSATIONS === undefined ? {} : { maxConversations: fileEnv.FEISHU_MAX_CONVERSATIONS }),
           ...(fileEnv.FEISHU_IDLE_CONVERSATION_MS === undefined ? {} : { idleConversationMs: fileEnv.FEISHU_IDLE_CONVERSATION_MS }),
+          ...(fileEnv.FEISHU_GROUP_CONTEXT_MESSAGES === undefined ? {} : { groupContextMessages: fileEnv.FEISHU_GROUP_CONTEXT_MESSAGES }),
+          ...(fileEnv.FEISHU_GROUP_CONTEXT_LOOKBACK_MS === undefined ? {} : { groupContextLookbackMs: fileEnv.FEISHU_GROUP_CONTEXT_LOOKBACK_MS }),
+          ...(fileEnv.FEISHU_GROUP_CONTEXT_SOURCE === undefined ? {} : { groupContextSource: fileEnv.FEISHU_GROUP_CONTEXT_SOURCE }),
         });
       } catch (error) {
         ctx.ui.notify(`飞书配置保存失败：${errorMessage(error)}`, "error");
@@ -261,6 +265,11 @@ export default function (pi: ExtensionAPI) {
   let ownedLock: FeishuConnectionLock | null = null;
   const maxConversations = Math.max(1, Number(process.env.FEISHU_MAX_CONVERSATIONS ?? fileEnv.FEISHU_MAX_CONVERSATIONS ?? 20) || 20);
   const idleConversationMs = Math.max(60_000, Number(process.env.FEISHU_IDLE_CONVERSATION_MS ?? fileEnv.FEISHU_IDLE_CONVERSATION_MS ?? 30 * 60_000) || 30 * 60_000);
+  const groupContextMessages = Math.max(0, Math.min(50, Number(process.env.FEISHU_GROUP_CONTEXT_MESSAGES ?? fileEnv.FEISHU_GROUP_CONTEXT_MESSAGES ?? 0) || 0));
+  const groupContextLookbackMs = Math.max(60_000, Number(process.env.FEISHU_GROUP_CONTEXT_LOOKBACK_MS ?? fileEnv.FEISHU_GROUP_CONTEXT_LOOKBACK_MS ?? 30 * 60_000) || 30 * 60_000);
+  const groupContextSource = (process.env.FEISHU_GROUP_CONTEXT_SOURCE ?? fileEnv.FEISHU_GROUP_CONTEXT_SOURCE) === "lark-cli-user"
+    ? "lark-cli-user"
+    : "bot";
   let idleSweep: ReturnType<typeof setInterval> | null = null;
 
   function runLifecycle<T>(operation: () => Promise<T>): Promise<T> {
@@ -582,6 +591,7 @@ export default function (pi: ExtensionAPI) {
     senderId: string;
     senderName?: string;
     messageId: string;
+    createTime: number;
     content?: string;
     imageResources?: ImageResource[];
   }): Promise<void> {
@@ -592,7 +602,25 @@ export default function (pi: ExtensionAPI) {
     const turn = createPendingTurn(msg.chatId, msg.messageId, msg.imageResources);
     try {
       const key = conversationKey(msg);
-      const prompt = formatFeishuPrompt(msg);
+      let groupContext: string | undefined;
+      if (msg.chatType === "group" && groupContextMessages > 0) {
+        try {
+          const contextOptions = {
+            chatId: msg.chatId,
+            triggerMessageId: msg.messageId,
+            messageLimit: groupContextMessages,
+            lookbackMs: groupContextLookbackMs,
+            botOpenId: channel.botIdentity?.openId,
+            nowMs: msg.createTime || Date.now(),
+          };
+          groupContext = groupContextSource === "lark-cli-user"
+            ? await fetchRecentGroupContextViaLarkCli(contextOptions, runLarkCliRead)
+            : await fetchRecentGroupContext(channel.rawClient, contextOptions);
+        } catch (error) {
+          console.warn(`[feishu-bot] ⚠️ 获取群聊上下文失败，将仅处理当前消息: ${errorMessage(error)}`);
+        }
+      }
+      const prompt = formatFeishuPrompt({ ...msg, groupContext });
       const generation = lifecycleGeneration;
       const conversation = await getConversationAndReserve(key, generation);
       conversation.tail = conversation.tail
@@ -822,6 +850,7 @@ export default function (pi: ExtensionAPI) {
         senderId: msg.senderId,
         senderName: msg.senderName,
         messageId: msg.messageId,
+        createTime: msg.createTime,
         content: promptText,
         imageResources,
       });

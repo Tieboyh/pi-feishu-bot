@@ -21,12 +21,18 @@ test("env rendering preserves optional pool settings without shell quoting ambig
     requireMention: false,
     maxConversations: "12",
     idleConversationMs: "60000",
+    groupContextMessages: "20",
+    groupContextLookbackMs: "1800000",
+    groupContextSource: "lark-cli-user",
   })).toBe([
     "FEISHU_APP_ID=cli_example",
     "FEISHU_APP_SECRET=secret_example",
     "FEISHU_REQUIRE_MENTION=false",
     "FEISHU_MAX_CONVERSATIONS=12",
     "FEISHU_IDLE_CONVERSATION_MS=60000",
+    "FEISHU_GROUP_CONTEXT_MESSAGES=20",
+    "FEISHU_GROUP_CONTEXT_LOOKBACK_MS=1800000",
+    "FEISHU_GROUP_CONTEXT_SOURCE=lark-cli-user",
     "",
   ].join("\n"));
 });
