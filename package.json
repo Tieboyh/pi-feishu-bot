@@ -1,6 +1,6 @@
 {
   "name": "@tieboyh/pi-feishu-bot",
-  "version": "0.4.1",
+  "version": "0.5.0",
   "description": "Feishu/Lark bot bridge for Pi with isolated persistent conversations and streaming cards",
   "type": "module",
   "main": "src/index.ts",
