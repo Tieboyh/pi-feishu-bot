@@ -13,6 +13,7 @@ import {
 
 describe("isolated Feishu agent runtime", () => {
   test("parent tool allowlist explicitly exposes delegation tools", () => {
+    expect(FEISHU_AGENT_TOOLS).toContain("notify");
     expect(FEISHU_AGENT_TOOLS).toContain("subagent");
     expect(FEISHU_AGENT_TOOLS).toContain("subagent_wait");
   });
@@ -41,6 +42,7 @@ describe("isolated Feishu agent runtime", () => {
       expect(resolved.denyExtensions).toBe(true);
       expect(resolved.sources).toEqual(["feishu-test", "inherited-parent"]);
       expect(resolveCurrentSubagentCapabilityCeiling("wrong-session")!.sources).toEqual(["inherited-parent"]);
+      expect(resolved.allowedTools).not.toContain("notify");
       expect(resolved.allowedTools).not.toContain("subagent");
       expect(resolved.allowedTools).not.toContain("subagent_wait");
     } finally {

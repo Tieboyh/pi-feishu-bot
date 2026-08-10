@@ -48,6 +48,7 @@ import {
   type SessionIndexV2,
 } from "./sessions/session-control.ts";
 import { isRestorableSessionFile, secureEnvFileBeforeRead, secureSessionFile, secureSessionStorage } from "./sessions/storage-security.ts";
+import { registerFeishuNotifyTool } from "./tools/notify.ts";
 
 export { conversationKey, formatFeishuPrompt } from "./messaging/routing.ts";
 
@@ -170,6 +171,8 @@ export default function (pi: ExtensionAPI) {
   // second Feishu channel there: it would duplicate the long connection/replies.
   if (isSubagentProcess()) return;
 
+  registerFeishuNotifyTool(pi);
+
   pi.registerCommand("feishu-setup", {
     description: "交互配置飞书 App ID、App Secret 和群聊 @ 策略",
     handler: async (_args: string, ctx: any) => {
@@ -207,6 +210,8 @@ export default function (pi: ExtensionAPI) {
           ...(fileEnv.FEISHU_GROUP_CONTEXT_MESSAGES === undefined ? {} : { groupContextMessages: fileEnv.FEISHU_GROUP_CONTEXT_MESSAGES }),
           ...(fileEnv.FEISHU_GROUP_CONTEXT_LOOKBACK_MS === undefined ? {} : { groupContextLookbackMs: fileEnv.FEISHU_GROUP_CONTEXT_LOOKBACK_MS }),
           ...(fileEnv.FEISHU_GROUP_CONTEXT_SOURCE === undefined ? {} : { groupContextSource: fileEnv.FEISHU_GROUP_CONTEXT_SOURCE }),
+          ...(fileEnv.FEISHU_NOTIFY_WEBHOOK === undefined ? {} : { notifyWebhook: fileEnv.FEISHU_NOTIFY_WEBHOOK }),
+          ...(fileEnv.FEISHU_NOTIFY_TIMEOUT_MS === undefined ? {} : { notifyTimeoutMs: fileEnv.FEISHU_NOTIFY_TIMEOUT_MS }),
         });
       } catch (error) {
         ctx.ui.notify(`飞书配置保存失败：${errorMessage(error)}`, "error");

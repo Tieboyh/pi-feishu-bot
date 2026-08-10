@@ -1,5 +1,5 @@
 export const FEISHU_AGENT_TOOLS = [
-  "read", "bash", "edit", "write", "grep", "find", "ls", "subagent", "subagent_wait",
+  "read", "bash", "edit", "write", "grep", "find", "ls", "notify", "subagent", "subagent_wait",
 ] as const;
 
 export const FEISHU_DELEGATE_AGENTS = ["worker", "reviewer", "scout", "planner"] as const;

@@ -56,6 +56,9 @@ export function resolveSubagentsInstall(): { entry: string; manifest: string } {
 export function resolvePolicyExtension(): string {
   return fileURLToPath(new URL("./feishu-subagent-policy.ts", import.meta.url));
 }
+export function resolveNotifyExtension(): string {
+  return fileURLToPath(new URL("../tools/notify.ts", import.meta.url));
+}
 function childCeiling(): ResolvedSubagentCapabilityCeiling {
   return intersectSubagentCapabilityCeilings(
     decodeSubagentCapabilityCeiling(process.env.PI_SUBAGENT_CAPABILITY_CEILING_V1),
@@ -109,7 +112,8 @@ export class RpcAgentSession {
     promptTimeoutMs?: number; shutdownTimeoutMs?: number; onDeath?: (session: RpcAgentSession, error: Error) => void;
   }): Promise<RpcAgentSession> {
     const args = ["--mode", "rpc", "--no-extensions", "--extension", resolveSubagentsInstall().entry,
-      "--extension", resolvePolicyExtension(), "--tools", FEISHU_AGENT_TOOLS.join(","),
+      "--extension", resolvePolicyExtension(), "--extension", resolveNotifyExtension(),
+      "--tools", FEISHU_AGENT_TOOLS.join(","),
       "--session-dir", options.sessionDir,
       "--append-system-prompt", FEISHU_SUBAGENT_SYSTEM_PROMPT,
       "--append-system-prompt", "You are replying through Feishu. Preserve group context but do not expose sender IDs unless explicitly needed."];

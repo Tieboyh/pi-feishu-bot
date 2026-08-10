@@ -24,6 +24,8 @@ test("env rendering preserves optional pool settings without shell quoting ambig
     groupContextMessages: "20",
     groupContextLookbackMs: "1800000",
     groupContextSource: "lark-cli-user",
+    notifyWebhook: "https://open.feishu.cn/open-apis/bot/v2/hook/fixed-group",
+    notifyTimeoutMs: "10000",
   })).toBe([
     "FEISHU_APP_ID=cli_example",
     "FEISHU_APP_SECRET=secret_example",
@@ -33,6 +35,8 @@ test("env rendering preserves optional pool settings without shell quoting ambig
     "FEISHU_GROUP_CONTEXT_MESSAGES=20",
     "FEISHU_GROUP_CONTEXT_LOOKBACK_MS=1800000",
     "FEISHU_GROUP_CONTEXT_SOURCE=lark-cli-user",
+    "FEISHU_NOTIFY_WEBHOOK=https://open.feishu.cn/open-apis/bot/v2/hook/fixed-group",
+    "FEISHU_NOTIFY_TIMEOUT_MS=10000",
     "",
   ].join("\n"));
 });

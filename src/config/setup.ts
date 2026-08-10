@@ -12,6 +12,8 @@ export interface FeishuSetupValues {
   groupContextMessages?: string;
   groupContextLookbackMs?: string;
   groupContextSource?: string;
+  notifyWebhook?: string;
+  notifyTimeoutMs?: string;
 }
 
 function requiredCredential(value: string, label: string): string {
@@ -31,6 +33,8 @@ export function normalizeFeishuSetup(values: FeishuSetupValues): FeishuSetupValu
     ...(values.groupContextMessages === undefined ? {} : { groupContextMessages: values.groupContextMessages }),
     ...(values.groupContextLookbackMs === undefined ? {} : { groupContextLookbackMs: values.groupContextLookbackMs }),
     ...(values.groupContextSource === undefined ? {} : { groupContextSource: values.groupContextSource }),
+    ...(values.notifyWebhook === undefined ? {} : { notifyWebhook: requiredCredential(values.notifyWebhook, "FEISHU_NOTIFY_WEBHOOK") }),
+    ...(values.notifyTimeoutMs === undefined ? {} : { notifyTimeoutMs: requiredCredential(values.notifyTimeoutMs, "FEISHU_NOTIFY_TIMEOUT_MS") }),
   };
 }
 
@@ -46,6 +50,8 @@ export function renderFeishuEnv(values: FeishuSetupValues): string {
   if (normalized.groupContextMessages) lines.push(`FEISHU_GROUP_CONTEXT_MESSAGES=${normalized.groupContextMessages}`);
   if (normalized.groupContextLookbackMs) lines.push(`FEISHU_GROUP_CONTEXT_LOOKBACK_MS=${normalized.groupContextLookbackMs}`);
   if (normalized.groupContextSource) lines.push(`FEISHU_GROUP_CONTEXT_SOURCE=${normalized.groupContextSource}`);
+  if (normalized.notifyWebhook) lines.push(`FEISHU_NOTIFY_WEBHOOK=${normalized.notifyWebhook}`);
+  if (normalized.notifyTimeoutMs) lines.push(`FEISHU_NOTIFY_TIMEOUT_MS=${normalized.notifyTimeoutMs}`);
   return `${lines.join("\n")}\n`;
 }
 

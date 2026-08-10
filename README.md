@@ -9,6 +9,7 @@
 - 可在群聊触发 Agent 时按需拉取近期的人类聊天消息作为背景，不会响应未 @ 的普通消息。
 - 每个飞书会话拥有独立的 Pi RPC 进程、JSONL 历史和串行消息队列。
 - 同一条消息只创建一张卡片，处理中持续更新，完成后原地替换为最终答案。
+- 内置 `notify` 工具，可由 Pi Agent 向配置好的固定飞书信息同步群发送任务开始、里程碑、阻塞和完成通知。
 - 会话进程可按空闲时间安全释放，后续消息从持久化历史恢复。
 - 跨 Pi 进程独占连接，避免一个机器人被重复消费和重复回复。
 - 默认由当前 Agent 直接执行；只有用户在当前消息中明确要求委派时才允许前台 subagent。
@@ -93,6 +94,11 @@ FEISHU_GROUP_CONTEXT_MESSAGES=20
 FEISHU_GROUP_CONTEXT_LOOKBACK_MS=1800000
 # bot（默认）或 lark-cli-user
 FEISHU_GROUP_CONTEXT_SOURCE=bot
+
+# 可选：notify 工具的固定信息同步群自定义机器人 Webhook
+FEISHU_NOTIFY_WEBHOOK=https://open.feishu.cn/open-apis/bot/v2/hook/xxxxxxxx
+# 默认 10000，范围 1-60000 毫秒
+FEISHU_NOTIFY_TIMEOUT_MS=10000
 ```
 
 启用群聊上下文后，只有已经通过群聊响应策略的消息（默认是 @机器人）才会触发历史拉取。机器人从同一群聊最近的消息中选取指定数量的人类消息，排除当前触发消息、历史 @机器人消息、机器人消息和已删除消息，并把它们作为“不受信任的用户内容”附加给 Agent。普通群消息仍然不会调用 Agent 或产生回复。
@@ -121,6 +127,14 @@ FEISHU_GROUP_CONTEXT_SOURCE=bot
 | `/feishu` | 查看连接、锁持有者、工作区和活跃会话数量 |
 
 Pi 退出、切换会话或 `/reload` 时会自动断开。之后需要重新执行 `/connect-feishu`。
+
+### 固定群通知工具
+
+配置 `FEISHU_NOTIFY_WEBHOOK` 后，主 Pi 会话和飞书隔离 RPC 会话都会注册 `notify` 工具。工具只接收 `title` 与 `message`，接收群由 Webhook 固定，模型不能选择或修改目标。
+
+`notify` 适用于来自飞书的中长任务：任务实际开始后、重要里程碑、阻塞或失败、需要用户处理以及最终完成。普通聊天、简单操作、重复状态和仅面向当前会话的回复不应调用。标题最多 64 个 Unicode 字符，正文最多 1200 个 Unicode 字符；默认请求超时为 10 秒。
+
+Webhook 只在工具执行时从进程环境或权限为 `0600` 的状态文件读取，不写入工具参数、结果、Pi 会话或模型上下文。飞书隔离 RPC 进程仍不会继承 `FEISHU_*` 环境变量；subagent 不加载该工具。
 
 ### 在飞书中管理会话
 
@@ -197,7 +211,8 @@ pi-feishu-bot/
 │   ├── connection/              # 长连接独占锁
 │   ├── messaging/               # 消息路由、图片输入、卡片与流式输出
 │   ├── runtime/                 # 隔离 RPC Agent 与 subagent 策略
-│   └── sessions/                # 会话生命周期、索引、切换与存储安全
+│   ├── sessions/                # 会话生命周期、索引、切换与存储安全
+│   └── tools/                   # Pi 自定义工具（固定群 notify）
 ├── tests/
 │   ├── fixtures/                # 测试辅助进程
 │   └── *.test.ts                # 单元与集成测试
@@ -221,7 +236,7 @@ npm pack --dry-run
 
 ## 安全
 
-Pi 扩展以当前用户的完整系统权限运行。安装第三方 Pi Package 前应审查源码。本扩展不会把 App ID、App Secret 或其他机器人平台凭据传给飞书 RPC Agent，但会将聊天内容和工具历史持久化到本机状态目录。
+Pi 扩展以当前用户的完整系统权限运行。安装第三方 Pi Package 前应审查源码。本扩展不会把 App ID、App Secret、Webhook 或其他机器人平台凭据写入模型上下文或传给 subagent；飞书 RPC Agent 的 `notify` 扩展只在工具执行边界从受保护状态文件解析 Webhook。聊天内容和工具历史会持久化到本机状态目录。
 
 不要提交 `.env`、`sessions/`、锁文件或任何真实凭据。若凭据意外泄露，请立即在飞书开放平台轮换。
 
