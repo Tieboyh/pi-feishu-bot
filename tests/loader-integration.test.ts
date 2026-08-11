@@ -15,7 +15,7 @@ test("two active new/restored Feishu sessions have process-isolated extension ru
   const install = resolveSubagentsInstall();
   expect(install.entry).toContain("pi-subagents");
   expect(resolvePolicyExtension()).toEndWith("feishu-subagent-policy.ts");
-  expect(resolveNotifyExtension()).toEndWith("tools/notify.ts");
+  expect(resolveNotifyExtension().replaceAll("\\", "/")).toEndWith("tools/notify.ts");
 
   const pids: number[] = [];
   const a = await RpcAgentSession.create({ cwd, sessionDir });

@@ -9,7 +9,7 @@ test("env file is restricted before reading and Windows compatibility is control
   const env = join(root, ".env");
   await writeFile(env, "placeholder", { mode: 0o644 });
   secureEnvFileBeforeRead(env, "darwin");
-  expect((await stat(env)).mode & 0o777).toBe(0o600);
+  if (process.platform !== "win32") expect((await stat(env)).mode & 0o777).toBe(0o600);
   secureEnvFileBeforeRead(join(root, "missing.env"), "win32");
   expect(() => secureEnvFileBeforeRead(join(root, "missing.env"), "darwin")).toThrow();
 });

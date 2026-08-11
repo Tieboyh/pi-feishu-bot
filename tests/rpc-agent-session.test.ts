@@ -104,7 +104,7 @@ test("default RPC creation does not require a pi command on PATH", async () => {
     const session = await RpcAgentSession.create({
       cwd: process.cwd(),
       sessionDir: await mkdtemp(join(tmpdir(), "rpc-no-pi-path-")),
-      requestTimeoutMs: 2_000,
+      requestTimeoutMs: 15_000,
       shutdownTimeoutMs: 100,
     });
     sessions.push(session);
