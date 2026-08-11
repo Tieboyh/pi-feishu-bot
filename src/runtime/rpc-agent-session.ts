@@ -18,9 +18,9 @@ const DEFAULT_REQUEST_TIMEOUT_MS = 30_000;
 const DEFAULT_PROMPT_TIMEOUT_MS = 30 * 60_000;
 export const FEISHU_SUBAGENT_SYSTEM_PROMPT = "The subagent and subagent_wait tools are available in this isolated session, but do not use them by default. Use subagent only when the latest direct user message explicitly asks you to delegate, use a subagent, or have a named agent role perform work. Complexity, uncertainty, long duration, cross-role work, or a need for review do not imply authorization. Authorization applies only to the current request and requested scope; never reuse authorization from earlier messages. When explicitly authorized, you may delegate only to worker, reviewer, scout, or planner, every execution must pass async:false, detached/background delegation is disabled, and children cannot delegate again. When the user explicitly asks for a capability verification, invoke subagent with agent worker and async:false and report the tool result rather than a self-assessment.";
 const FORBIDDEN_ENV = /^(?:FEISHU_|LARK_|SLACK_|DISCORD_|TELEGRAM_|DINGTALK_|WECOM_|WECHAT_|LINE_|TEAMS_|BOT_|CHANNEL_)|(?:COOKIE|WEBHOOK|APP_SECRET|APP_ID|BOT_TOKEN|CHANNEL_TOKEN|SIGNING_SECRET)/i;
-const SYSTEM_ENV = /^(?:PATH|HOME|USER|LOGNAME|SHELL|TMPDIR|TMP|TEMP|LANG|TERM|COLORTERM|NO_PROXY|HTTP_PROXY|HTTPS_PROXY|ALL_PROXY|SSL_CERT_FILE|SSL_CERT_DIR|NODE_OPTIONS|NODE_EXTRA_CA_CERTS)$/;
-const SYSTEM_PREFIX_ENV = /^(?:LC_|XDG_)/;
-const PI_ENV = new Set(["PI_OFFLINE", "PI_PACKAGE_DIR", "PI_TELEMETRY", "PI_CACHE_RETENTION", "PI_SUBAGENT_PI_BINARY", "PI_SUBAGENT_CAPABILITY_CEILING_V1", "PI_SUBAGENT_MAX_DEPTH"]);
+const SYSTEM_ENV = /^(?:PATH|HOME|USER|LOGNAME|SHELL|TMPDIR|TMP|TEMP|LANG|TERM|COLORTERM|NO_PROXY|HTTP_PROXY|HTTPS_PROXY|ALL_PROXY|SSL_CERT_FILE|SSL_CERT_DIR|NODE_OPTIONS|NODE_EXTRA_CA_CERTS|USERPROFILE|APPDATA|LOCALAPPDATA|PROGRAMDATA|SYSTEMROOT|WINDIR|COMSPEC|PATHEXT|PROGRAMFILES|PROGRAMFILES\(X86\)|HOMEDRIVE|HOMEPATH|OS)$/i;
+const SYSTEM_PREFIX_ENV = /^(?:LC_|XDG_)/i;
+const PI_ENV = new Set(["PI_OFFLINE", "PI_PACKAGE_DIR", "PI_TELEMETRY", "PI_CACHE_RETENTION", "PI_CODING_AGENT_DIR", "PI_SUBAGENT_PI_BINARY", "PI_SUBAGENT_CAPABILITY_CEILING_V1", "PI_SUBAGENT_MAX_DEPTH"]);
 export const OFFICIAL_PROVIDER_ENV = new Set([
   // Pi 0.84.0 @earendil-works/pi-ai env-api-keys + CLI help contract.
   "COPILOT_GITHUB_TOKEN", "ANTHROPIC_AUTH_TOKEN", "ANTHROPIC_API_KEY", "ANTHROPIC_OAUTH_TOKEN", "ANT_LING_API_KEY",
@@ -58,6 +58,20 @@ export function resolvePolicyExtension(): string {
 }
 export function resolveNotifyExtension(): string {
   return fileURLToPath(new URL("../tools/notify.ts", import.meta.url));
+}
+export function resolvePiRpcEntry(): string {
+  return fileURLToPath(import.meta.resolve("@earendil-works/pi-coding-agent/rpc-entry"));
+}
+export function resolvePiRpcLaunch(
+  args: string[],
+  options: { override?: string | null; execPath?: string; rpcEntry?: string } = {},
+): { command: string; args: string[] } {
+  const override = options.override === undefined ? process.env.PI_SUBAGENT_PI_BINARY : options.override;
+  if (override) return { command: override, args: ["--mode", "rpc", ...args] };
+  return {
+    command: options.execPath ?? process.execPath,
+    args: [options.rpcEntry ?? resolvePiRpcEntry(), ...args],
+  };
 }
 function childCeiling(): ResolvedSubagentCapabilityCeiling {
   return intersectSubagentCapabilityCeilings(
@@ -111,7 +125,7 @@ export class RpcAgentSession {
     cwd: string; sessionDir: string; savedPath?: string; requestTimeoutMs?: number;
     promptTimeoutMs?: number; shutdownTimeoutMs?: number; onDeath?: (session: RpcAgentSession, error: Error) => void;
   }): Promise<RpcAgentSession> {
-    const args = ["--mode", "rpc", "--no-extensions", "--extension", resolveSubagentsInstall().entry,
+    const args = ["--no-extensions", "--extension", resolveSubagentsInstall().entry,
       "--extension", resolvePolicyExtension(), "--extension", resolveNotifyExtension(),
       "--tools", FEISHU_AGENT_TOOLS.join(","),
       "--session-dir", options.sessionDir,
@@ -121,7 +135,8 @@ export class RpcAgentSession {
     const env = buildSafeRpcEnv();
     env.PI_SUBAGENT_MAX_DEPTH = "1";
     env.PI_SUBAGENT_CAPABILITY_CEILING_V1 = encodeSubagentCapabilityCeiling(childCeiling());
-    const child = spawn(process.env.PI_SUBAGENT_PI_BINARY || "pi", args, { cwd: options.cwd, env, stdio: ["pipe", "pipe", "pipe"] });
+    const launch = resolvePiRpcLaunch(args);
+    const child = spawn(launch.command, launch.args, { cwd: options.cwd, env, stdio: ["pipe", "pipe", "pipe"] });
     const session = new RpcAgentSession(child, options.requestTimeoutMs ?? DEFAULT_REQUEST_TIMEOUT_MS,
       options.promptTimeoutMs ?? DEFAULT_PROMPT_TIMEOUT_MS, options.shutdownTimeoutMs ?? 5_000, options.onDeath);
     try {

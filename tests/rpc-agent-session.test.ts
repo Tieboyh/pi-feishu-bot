@@ -3,7 +3,13 @@ import { mkdtemp } from "node:fs/promises";
 import { spawn } from "node:child_process";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { buildSafeRpcEnv, FEISHU_SUBAGENT_SYSTEM_PROMPT, OFFICIAL_PROVIDER_ENV, RpcAgentSession } from "../src/runtime/rpc-agent-session.ts";
+import {
+  buildSafeRpcEnv,
+  FEISHU_SUBAGENT_SYSTEM_PROMPT,
+  OFFICIAL_PROVIDER_ENV,
+  resolvePiRpcLaunch,
+  RpcAgentSession,
+} from "../src/runtime/rpc-agent-session.ts";
 
 const sessions: RpcAgentSession[] = [];
 afterEach(async () => { await Promise.allSettled(sessions.splice(0).map((session) => session.dispose())); });
@@ -43,6 +49,71 @@ test("safe child env removes bot credentials but preserves provider and Pi capab
   const officialSource = Object.fromEntries([...OFFICIAL_PROVIDER_ENV].map((key) => [key, "official"]));
   const officialResult = buildSafeRpcEnv(officialSource);
   expect([...OFFICIAL_PROVIDER_ENV].every((key) => officialResult[key] === "official")).toBe(true);
+});
+
+test("safe child env preserves Windows system paths regardless of key casing", () => {
+  const env = buildSafeRpcEnv({
+    Path: "C:\\Program Files\\nodejs;C:\\Users\\Administrator\\AppData\\Roaming\\npm",
+    USERPROFILE: "C:\\Users\\Administrator",
+    APPDATA: "C:\\Users\\Administrator\\AppData\\Roaming",
+    LOCALAPPDATA: "C:\\Users\\Administrator\\AppData\\Local",
+    SystemRoot: "C:\\Windows",
+    ComSpec: "C:\\Windows\\System32\\cmd.exe",
+    PATHEXT: ".COM;.EXE;.BAT;.CMD",
+    ProgramFiles: "C:\\Program Files",
+    PI_CODING_AGENT_DIR: "C:\\Users\\Administrator\\.pi\\agent",
+    FEISHU_APP_SECRET: "sentinel",
+  });
+  expect(env.Path).toContain("nodejs");
+  expect(env.USERPROFILE).toBe("C:\\Users\\Administrator");
+  expect(env.APPDATA).toContain("AppData");
+  expect(env.LOCALAPPDATA).toContain("AppData");
+  expect(env.SystemRoot).toBe("C:\\Windows");
+  expect(env.ComSpec).toEndWith("cmd.exe");
+  expect(env.PATHEXT).toContain(".CMD");
+  expect(env.ProgramFiles).toBe("C:\\Program Files");
+  expect(env.PI_CODING_AGENT_DIR).toEndWith(".pi\\agent");
+  expect(env.FEISHU_APP_SECRET).toBeUndefined();
+});
+
+test("default RPC launch uses the current Node and official rpc-entry while override keeps CLI mode", () => {
+  expect(resolvePiRpcLaunch(["--no-extensions"], {
+    override: null,
+    execPath: "C:\\Program Files\\nodejs\\node.exe",
+    rpcEntry: "C:\\pi\\dist\\rpc-entry.js",
+  })).toEqual({
+    command: "C:\\Program Files\\nodejs\\node.exe",
+    args: ["C:\\pi\\dist\\rpc-entry.js", "--no-extensions"],
+  });
+  expect(resolvePiRpcLaunch(["--no-extensions"], {
+    override: "D:\\tools\\custom-pi.exe",
+    execPath: "C:\\Program Files\\nodejs\\node.exe",
+    rpcEntry: "C:\\pi\\dist\\rpc-entry.js",
+  })).toEqual({
+    command: "D:\\tools\\custom-pi.exe",
+    args: ["--mode", "rpc", "--no-extensions"],
+  });
+});
+
+test("default RPC creation does not require a pi command on PATH", async () => {
+  const previousPath = process.env.PATH;
+  const previousBinary = process.env.PI_SUBAGENT_PI_BINARY;
+  process.env.PATH = "/definitely-no-pi";
+  delete process.env.PI_SUBAGENT_PI_BINARY;
+  try {
+    const session = await RpcAgentSession.create({
+      cwd: process.cwd(),
+      sessionDir: await mkdtemp(join(tmpdir(), "rpc-no-pi-path-")),
+      requestTimeoutMs: 2_000,
+      shutdownTimeoutMs: 100,
+    });
+    sessions.push(session);
+    expect(session.sessionFile).not.toBe("");
+  } finally {
+    if (previousPath === undefined) delete process.env.PATH; else process.env.PATH = previousPath;
+    if (previousBinary === undefined) delete process.env.PI_SUBAGENT_PI_BINARY;
+    else process.env.PI_SUBAGENT_PI_BINARY = previousBinary;
+  }
 });
 
 test("real RPC bash sees only provider/capability sentinels", async () => {

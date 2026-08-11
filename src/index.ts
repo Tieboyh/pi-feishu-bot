@@ -290,9 +290,9 @@ export default function (pi: ExtensionAPI) {
     const tempFile = SESSION_INDEX_FILE + ".tmp";
     const snapshot = JSON.stringify(sessionIndex, null, 2) + "\n";
     await writeFile(tempFile, snapshot, { encoding: "utf8", mode: 0o600 });
-    await chmod(tempFile, 0o600);
+    if (process.platform !== "win32") await chmod(tempFile, 0o600);
     await rename(tempFile, SESSION_INDEX_FILE);
-    await chmod(SESSION_INDEX_FILE, 0o600);
+    if (process.platform !== "win32") await chmod(SESSION_INDEX_FILE, 0o600);
   }
 
   function mutateSessionIndex(mutate: (index: SessionIndexV2) => void): Promise<void> {
@@ -906,7 +906,7 @@ export default function (pi: ExtensionAPI) {
     shuttingDown = false;
     connectionPromise = (async () => {
       await mkdir(STATE_DIR, { recursive: true, mode: 0o700 });
-      await chmod(STATE_DIR, 0o700);
+      if (process.platform !== "win32") await chmod(STATE_DIR, 0o700);
       ownedLock = await acquireConnectionLock(CONNECTION_LOCK_FILE, {
         sessionId: ctx.sessionManager.getSessionId(),
         sessionFile: ctx.sessionManager.getSessionFile(),

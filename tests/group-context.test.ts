@@ -4,6 +4,7 @@ import {
   fetchRecentGroupContext,
   fetchRecentGroupContextViaLarkCli,
   readableMessageContent,
+  resolveLarkCliLaunch,
   type GroupHistoryClient,
 } from "../src/messaging/group-context.ts";
 
@@ -20,6 +21,39 @@ test("lark-cli 子进程环境不会继承飞书机器人凭据", () => {
   expect(env.FEISHU_APP_SECRET).toBeUndefined();
   expect(env.LARK_APP_ID).toBeUndefined();
   expect(env.RANDOM_SECRET).toBeUndefined();
+});
+
+test("lark-cli 子进程保留 Windows 系统环境且不经过 cmd shell", () => {
+  const source = {
+    Path: "C:\\Program Files\\nodejs;C:\\Users\\Administrator\\AppData\\Roaming\\npm",
+    USERPROFILE: "C:\\Users\\Administrator",
+    APPDATA: "C:\\Users\\Administrator\\AppData\\Roaming",
+    SystemRoot: "C:\\Windows",
+    ComSpec: "C:\\Windows\\System32\\cmd.exe",
+    PATHEXT: ".COM;.EXE;.BAT;.CMD",
+    FEISHU_APP_SECRET: "secret",
+  };
+  const env = buildSafeLarkCliEnv(source);
+  expect(env.Path).toContain("nodejs");
+  expect(env.USERPROFILE).toBe("C:\\Users\\Administrator");
+  expect(env.APPDATA).toContain("AppData");
+  expect(env.SystemRoot).toBe("C:\\Windows");
+  expect(env.ComSpec).toEndWith("cmd.exe");
+  expect(env.PATHEXT).toContain(".CMD");
+  expect(env.FEISHU_APP_SECRET).toBeUndefined();
+
+  const npmRunner = "C:\\Users\\Administrator\\AppData\\Roaming\\npm\\node_modules\\@larksuite\\cli\\scripts\\run.js";
+  const launch = resolveLarkCliLaunch(["im", "+chat-messages-list"], {
+    platform: "win32",
+    env: source,
+    execPath: "C:\\Program Files\\nodejs\\node.exe",
+    exists: (path) => path === npmRunner,
+  });
+  expect(launch).toEqual({
+    command: "C:\\Program Files\\nodejs\\node.exe",
+    args: [npmRunner, "im", "+chat-messages-list"],
+  });
+  expect(launch.command).not.toEndWith("cmd.exe");
 });
 
 describe("readableMessageContent", () => {

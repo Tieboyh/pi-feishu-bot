@@ -1,4 +1,6 @@
 import { execFile } from "node:child_process";
+import { existsSync } from "node:fs";
+import { win32 } from "node:path";
 
 export interface GroupHistoryItem {
   message_id?: string;
@@ -53,6 +55,8 @@ const MESSAGE_TEXT_LIMIT = 500;
 const CLI_ENV_KEYS = new Set([
   "PATH", "HOME", "USER", "LOGNAME", "SHELL", "TMPDIR", "TMP", "TEMP", "LANG",
   "HTTP_PROXY", "HTTPS_PROXY", "ALL_PROXY", "NO_PROXY", "SSL_CERT_FILE", "SSL_CERT_DIR",
+  "USERPROFILE", "APPDATA", "LOCALAPPDATA", "PROGRAMDATA", "SYSTEMROOT", "WINDIR",
+  "COMSPEC", "PATHEXT", "PROGRAMFILES", "PROGRAMFILES(X86)", "HOMEDRIVE", "HOMEPATH", "OS",
 ]);
 
 export function buildSafeLarkCliEnv(source: NodeJS.ProcessEnv = process.env): NodeJS.ProcessEnv {
@@ -61,13 +65,44 @@ export function buildSafeLarkCliEnv(source: NodeJS.ProcessEnv = process.env): No
     LARKSUITE_CLI_NO_SKILLS_NOTIFIER: "1",
   };
   for (const [key, value] of Object.entries(source)) {
-    if (value !== undefined && (CLI_ENV_KEYS.has(key) || key.startsWith("LC_") || key.startsWith("XDG_"))) env[key] = value;
+    const normalizedKey = key.toUpperCase();
+    if (value !== undefined && (CLI_ENV_KEYS.has(normalizedKey) || normalizedKey.startsWith("LC_") || normalizedKey.startsWith("XDG_"))) env[key] = value;
   }
   return env;
 }
 
+export function resolveLarkCliLaunch(
+  args: string[],
+  options: {
+    platform?: NodeJS.Platform;
+    env?: NodeJS.ProcessEnv;
+    execPath?: string;
+    exists?: (path: string) => boolean;
+  } = {},
+): { command: string; args: string[] } {
+  const platform = options.platform ?? process.platform;
+  if (platform !== "win32") return { command: "lark-cli", args };
+
+  const source = options.env ?? process.env;
+  const pathValue = Object.entries(source).find(([key, value]) => key.toUpperCase() === "PATH" && value)?.[1] ?? "";
+  const exists = options.exists ?? existsSync;
+  for (const rawDir of pathValue.split(";")) {
+    const trimmed = rawDir.trim();
+    const dir = trimmed.startsWith('"') && trimmed.endsWith('"') ? trimmed.slice(1, -1) : trimmed;
+    if (!dir) continue;
+    const executable = win32.join(dir, "lark-cli.exe");
+    if (exists(executable)) return { command: executable, args };
+    const packagedExecutable = win32.join(dir, "node_modules", "@larksuite", "cli", "bin", "lark-cli.exe");
+    if (exists(packagedExecutable)) return { command: packagedExecutable, args };
+    const npmRunner = win32.join(dir, "node_modules", "@larksuite", "cli", "scripts", "run.js");
+    if (exists(npmRunner)) return { command: options.execPath ?? process.execPath, args: [npmRunner, ...args] };
+  }
+  throw new Error("Windows 上找不到可直接执行的 lark-cli。请确认官方 @larksuite/cli 已安装且 npm 全局目录位于 Path 中。");
+}
+
 export const runLarkCliRead: LarkCliRunner = (args, timeoutMs) => new Promise((resolve, reject) => {
-  execFile("lark-cli", args, {
+  const launch = resolveLarkCliLaunch(args);
+  execFile(launch.command, launch.args, {
     env: buildSafeLarkCliEnv(),
     encoding: "utf8",
     timeout: timeoutMs,

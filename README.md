@@ -75,6 +75,16 @@ install -m 600 /dev/null ~/.pi/agent/state/pi-feishu-bot/.env
 ${EDITOR:-vi} ~/.pi/agent/state/pi-feishu-bot/.env
 ```
 
+Windows PowerShell 可使用：
+
+```powershell
+$stateDir = Join-Path $HOME ".pi\agent\state\pi-feishu-bot"
+New-Item -ItemType Directory -Force $stateDir | Out-Null
+notepad (Join-Path $stateDir ".env")
+```
+
+Windows 不支持 Unix 的 `0600` / `0700` 权限语义，配置文件和会话文件会继承当前用户目录的 NTFS ACL。不要把状态目录放到共享或对其他用户开放的位置。
+
 写入：
 
 ```dotenv
@@ -233,6 +243,8 @@ npm pack --dry-run
 ```
 
 测试使用 Bun；运行时只需要 Node.js 和 Pi。
+
+CI 会在 Linux、macOS 和 Windows 上运行完整验证。Windows 下 RPC 子进程由当前 `node.exe` 直接启动 Pi 官方导出的 `rpc-entry`，不依赖 npm 生成的 `pi.cmd` 或 PATH；如设置了 `PI_SUBAGENT_PI_BINARY`，仍优先使用该自定义入口。`lark-cli-user` 模式会直接运行官方 CLI 的原生可执行文件或 Node 包装入口，不通过 `cmd.exe` shell。
 
 ## 安全
 

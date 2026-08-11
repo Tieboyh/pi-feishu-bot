@@ -12,7 +12,7 @@
   ],
   "scripts": {
     "test": "bun test --timeout 20000 tests",
-    "check": "bun build src/index.ts --target=node --external @earendil-works/pi-coding-agent --external @larksuiteoapi/node-sdk --outfile=/tmp/pi-feishu-bot-check.js && tsc -p tsconfig.json",
+    "check": "bun run scripts/check-build.ts && tsc -p tsconfig.json",
     "verify": "npm test && npm run check",
     "prepack": "npm run verify"
   },

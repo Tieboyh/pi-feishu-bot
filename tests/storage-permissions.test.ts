@@ -33,7 +33,7 @@ test("only non-empty session files are restorable", async () => {
   expect(isRestorableSessionFile(populated)).toBe(true);
 });
 
-test("session storage is recursively restricted to 0700/0600", async () => {
+test("session storage is recursively restricted on Unix and remains usable on Windows", async () => {
   const root = await mkdtemp(join(tmpdir(), "feishu-permissions-"));
   const sessions = join(root, "sessions");
   const nested = join(sessions, "nested");
@@ -43,8 +43,12 @@ test("session storage is recursively restricted to 0700/0600", async () => {
   await writeFile(index, "{}", { mode: 0o644 });
   await writeFile(jsonl, "", { mode: 0o644 });
   await secureSessionStorage(sessions);
-  expect((await stat(sessions)).mode & 0o777).toBe(0o700);
-  expect((await stat(nested)).mode & 0o777).toBe(0o700);
-  expect((await stat(index)).mode & 0o777).toBe(0o600);
-  expect((await stat(jsonl)).mode & 0o777).toBe(0o600);
+  await access(index);
+  await access(jsonl);
+  if (process.platform !== "win32") {
+    expect((await stat(sessions)).mode & 0o777).toBe(0o700);
+    expect((await stat(nested)).mode & 0o777).toBe(0o700);
+    expect((await stat(index)).mode & 0o777).toBe(0o600);
+    expect((await stat(jsonl)).mode & 0o777).toBe(0o600);
+  }
 });

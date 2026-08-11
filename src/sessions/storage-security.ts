@@ -32,7 +32,7 @@ export async function secureSessionFile(file: string): Promise<void> {
 
 export async function secureSessionStorage(dir: string): Promise<void> {
   await mkdir(dir, { recursive: true, mode: 0o700 });
-  await chmod(dir, 0o700);
+  if (process.platform !== "win32") await chmod(dir, 0o700);
   for (const entry of await readdir(dir, { withFileTypes: true })) {
     const path = join(dir, entry.name);
     if (entry.isDirectory()) await secureSessionStorage(path);
