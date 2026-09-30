@@ -62,15 +62,19 @@ export function resolveNotifyExtension(): string {
 export function resolvePiRpcEntry(): string {
   return fileURLToPath(import.meta.resolve("@earendil-works/pi-coding-agent/rpc-entry"));
 }
+export function resolveSettingsPreload(): string {
+  // --import is an ESM specifier: file URLs also work for Windows drive paths.
+  return new URL("./isolated-settings.mjs", import.meta.url).href;
+}
 export function resolvePiRpcLaunch(
   args: string[],
-  options: { override?: string | null; execPath?: string; rpcEntry?: string } = {},
+  options: { override?: string | null; execPath?: string; rpcEntry?: string; settingsPreload?: string } = {},
 ): { command: string; args: string[] } {
   const override = options.override === undefined ? process.env.PI_SUBAGENT_PI_BINARY : options.override;
   if (override) return { command: override, args: ["--mode", "rpc", ...args] };
   return {
     command: options.execPath ?? process.execPath,
-    args: [options.rpcEntry ?? resolvePiRpcEntry(), ...args],
+    args: ["--import", options.settingsPreload ?? resolveSettingsPreload(), options.rpcEntry ?? resolvePiRpcEntry(), ...args],
   };
 }
 function childCeiling(): ResolvedSubagentCapabilityCeiling {
@@ -95,6 +99,7 @@ export class RpcAgentSession {
   sessionFile = "";
   sessionId = "";
   isStreaming = false;
+  modelSettingsIsolated = false;
 
   private constructor(
     child: ChildProcessWithoutNullStreams,
@@ -122,7 +127,7 @@ export class RpcAgentSession {
   }
 
   static async create(options: {
-    cwd: string; sessionDir: string; savedPath?: string; requestTimeoutMs?: number;
+    cwd: string; sessionDir: string; savedPath?: string; selectedModel?: { provider: string; modelId: string }; requestTimeoutMs?: number;
     promptTimeoutMs?: number; shutdownTimeoutMs?: number; onDeath?: (session: RpcAgentSession, error: Error) => void;
   }): Promise<RpcAgentSession> {
     const args = ["--no-extensions", "--extension", resolveSubagentsInstall().entry,
@@ -139,11 +144,18 @@ export class RpcAgentSession {
     const child = spawn(launch.command, launch.args, { cwd: options.cwd, env, stdio: ["pipe", "pipe", "pipe"] });
     const session = new RpcAgentSession(child, options.requestTimeoutMs ?? DEFAULT_REQUEST_TIMEOUT_MS,
       options.promptTimeoutMs ?? DEFAULT_PROMPT_TIMEOUT_MS, options.shutdownTimeoutMs ?? 5_000, options.onDeath);
+    session.modelSettingsIsolated = !process.env.PI_SUBAGENT_PI_BINARY;
     try {
       const state = await session.request("get_state");
       session.sessionFile = state.sessionFile;
       session.sessionId = state.sessionId;
       if (!session.sessionFile) throw new Error("Feishu Agent RPC did not create a persistent session file.");
+      // Pi defers writing new JSONL files until the first assistant response.
+      // The bot index also stores explicit model choices for empty sessions.
+      if (options.selectedModel && (state.model?.provider !== options.selectedModel.provider || state.model?.id !== options.selectedModel.modelId)) {
+        if (!session.modelSettingsIsolated) throw new Error("自定义 Pi 启动器不支持安全恢复会话模型，请使用默认 RPC 启动器。");
+        await session.request("set_model", options.selectedModel);
+      }
       return session;
     } catch (error) { await session.dispose(); throw error; }
   }

@@ -1,9 +1,12 @@
+import type { ModelControlCommand } from "./model-control.ts";
+
 export interface ManagedSession {
   id: string;
   name: string;
   file: string;
   createdAt: string;
   lastUsedAt: string;
+  model?: { provider: string; modelId: string };
 }
 
 export interface ChatSessionState {
@@ -18,6 +21,8 @@ export interface SessionIndexV2 {
 }
 
 export type SessionControlCommand =
+  | ModelControlCommand
+  | { type: "help"; error?: string }
   | { type: "new"; name?: string }
   | { type: "list" }
   | { type: "current" }
@@ -27,10 +32,6 @@ export type SessionControlCommand =
   | { type: "confirm-delete"; target?: string }
   | { type: "cancel-delete" };
 
-function cleanText(value: string): string {
-  return value.trim().replace(/[。！!？?]+$/u, "").trim();
-}
-
 export function normalizeSessionName(value: string): string {
   const name = value.replace(/^[“”"'‘’]+|[“”"'‘’]+$/gu, "").replace(/\s+/gu, " ").trim();
   if (!name) throw new Error("会话名称不能为空。");
@@ -38,36 +39,77 @@ export function normalizeSessionName(value: string): string {
   return name;
 }
 
+export function formatSessionHelp(error?: string): string {
+  return [
+    ...(error ? [error, ""] : []),
+    "会话与模型命令（直接发送，不需要让 AI 执行）：",
+    "/help — 显示帮助",
+    "/new [名称] — 创建并切换到新会话",
+    "/list — 查看当前聊天的历史会话",
+    "/current — 查看当前会话",
+    "/models [页码] — 查看可用模型",
+    "/model — 查看当前模型",
+    "/model <provider>/<modelId> — 切换当前会话模型",
+    "/switch <名称或短 ID> — 切换会话并恢复历史",
+    "/restore — 恢复上一个会话",
+    "/delete <名称或短 ID> — 发起删除（需要确认）",
+    "/confirm [名称或短 ID] — 确认自己在 5 分钟内发起的删除",
+    "/cancel — 取消自己发起的删除",
+    "",
+    "例：/new 项目 A，然后用 /list 查看、/switch 项目 A 切换。",
+    "群聊默认需要 @机器人；群内共享会话，私聊按用户隔离。",
+    "有任务执行或排队时，需等待完成再新建、切换会话或模型。",
+    "模型选择随会话保存；群内切换影响当前群共享会话，不改变全局默认模型。",
+    "仅支持以上英文斜杠命令，会话名称可以使用中文。",
+  ].join("\n");
+}
+
+function parseSlashCommand(input: string): SessionControlCommand {
+  const match = input.match(/^\/([a-z-]+)(?:[ \t]+([^\r\n]+))?$/iu);
+  if (!match) return { type: "help", error: "命令格式不正确，请单独发送一条命令。" };
+  const command = match[1]!.toLowerCase();
+  const argument = match[2]?.trim();
+  if (command === "models") {
+    if (argument && (!/^[1-9]\d*$/u.test(argument) || !Number.isSafeInteger(Number(argument)))) {
+      return { type: "help", error: "用法：/models [正整数页码]。" };
+    }
+    return { type: "models", page: argument ? Number(argument) : 1 };
+  }
+  if (command === "model") {
+    if (!argument) return { type: "model" };
+    if (!/^[^\s/]+\/[^\s]+$/u.test(argument)) {
+      return { type: "help", error: "用法：/model <provider>/<modelId>，请从 /models 复制完整标识。" };
+    }
+    return { type: "model", target: argument };
+  }
+  const noArgument = {
+    help: "help", list: "list", current: "current", restore: "restore", cancel: "cancel-delete",
+  } as const;
+  if (Object.prototype.hasOwnProperty.call(noArgument, command)) {
+    if (argument) return { type: "help", error: `/${command} 不接受参数。` };
+    return { type: noArgument[command as keyof typeof noArgument] };
+  }
+  if (!["new", "switch", "delete", "confirm"].includes(command)) {
+    return { type: "help", error: `未知命令：/${command}。` };
+  }
+  if (!argument) {
+    if (command === "new") return { type: "new" };
+    if (command === "confirm") return { type: "confirm-delete" };
+    return { type: "help", error: `用法：/${command} <名称或短 ID>` };
+  }
+  try {
+    const target = normalizeSessionName(argument);
+    if (command === "new") return { type: "new", name: target };
+    if (command === "confirm") return { type: "confirm-delete", target };
+    return { type: command as "switch" | "delete", target };
+  } catch (error) {
+    return { type: "help", error: error instanceof Error ? error.message : "会话名称无效。" };
+  }
+}
+
 export function parseSessionControlCommand(input: string): SessionControlCommand | undefined {
-  const text = cleanText(input);
-  if (!text) return undefined;
-
-  if (/^(?:清空|重置)(?:当前)?(?:会话)?上下文$/u.test(text) || /^(?:开|创建|新建)(?:一个)?新会话$/u.test(text)) {
-    return { type: "new" };
-  }
-  let match = text.match(/^(?:开|创建|新建)(?:一个)?(?:名为|叫)[“”"'‘’]?(.+?)[“”"'‘’]?的?新会话$/u);
-  if (!match) match = text.match(/^(?:开|创建|新建)(?:一个)?新会话[，,：:\s]+(?:名字?(?:叫|是)|名为)[：:\s]*[“”"'‘’]?(.+?)[“”"'‘’]?$/u);
-  if (!match) match = text.match(/^(?:创建|新建)会话[：:\s]+(.+)$/u);
-  if (match) return { type: "new", name: normalizeSessionName(match[1]!) };
-
-  if (/^(?:查看|列出|显示)(?:我的|当前聊天的)?(?:历史)?会话(?:列表)?$/u.test(text) || /^会话列表$/u.test(text)) {
-    return { type: "list" };
-  }
-  if (/^(?:当前|现在)(?:是|使用的)?(?:什么|哪个)?会话$/u.test(text) || /^当前会话$/u.test(text)) {
-    return { type: "current" };
-  }
-  if (/^(?:恢复会话|恢复上一个(?:历史)?会话|恢复上一(?:历史)?会话|切回上一个(?:历史)?会话|切回上一(?:历史)?会话)$/u.test(text)) return { type: "restore" };
-
-  match = text.match(/^(?:恢复会话|切换到会话|切换会话|切换到|切换)[：:\s]+[“”"'‘’]?(.+?)[“”"'‘’]?$/u);
-  if (match) return { type: "switch", target: normalizeSessionName(match[1]!) };
-
-  if (/^(?:取消删除|取消删除会话)$/u.test(text)) return { type: "cancel-delete" };
-  match = text.match(/^确认删除(?:会话)?(?:[：:\s]+[“”"'‘’]?(.+?)[“”"'‘’]?)?$/u);
-  if (match) return { type: "confirm-delete", ...(match[1] ? { target: normalizeSessionName(match[1]) } : {}) };
-  match = text.match(/^删除(?:历史)?会话[：:\s]*[“”"'‘’]?(.+?)[“”"'‘’]?$/u);
-  if (match) return { type: "delete", target: normalizeSessionName(match[1]!) };
-
-  return undefined;
+  const text = input.trim();
+  return text.startsWith("/") ? parseSlashCommand(text) : undefined;
 }
 
 export function emptySessionIndex(): SessionIndexV2 {
@@ -92,6 +134,8 @@ export function migrateSessionIndex(
         file: entry.file,
         createdAt: typeof entry.createdAt === "string" ? entry.createdAt : now,
         lastUsedAt: typeof entry.lastUsedAt === "string" ? entry.lastUsedAt : now,
+        ...(typeof entry.model?.provider === "string" && entry.model.provider && typeof entry.model?.modelId === "string" && entry.model.modelId
+          ? { model: { provider: entry.model.provider, modelId: entry.model.modelId } } : {}),
       }));
       const ids = new Set(sessions.map((entry: ManagedSession) => entry.id));
       chats[key] = {

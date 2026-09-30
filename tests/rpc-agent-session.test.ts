@@ -8,6 +8,7 @@ import {
   FEISHU_SUBAGENT_SYSTEM_PROMPT,
   OFFICIAL_PROVIDER_ENV,
   resolvePiRpcLaunch,
+  resolveSettingsPreload,
   RpcAgentSession,
 } from "../src/runtime/rpc-agent-session.ts";
 
@@ -77,13 +78,16 @@ test("safe child env preserves Windows system paths regardless of key casing", (
 });
 
 test("default RPC launch uses the current Node and official rpc-entry while override keeps CLI mode", () => {
+  expect(resolveSettingsPreload()).toStartWith("file://");
+  expect(resolveSettingsPreload()).toEndWith("isolated-settings.mjs");
   expect(resolvePiRpcLaunch(["--no-extensions"], {
     override: null,
     execPath: "C:\\Program Files\\nodejs\\node.exe",
     rpcEntry: "C:\\pi\\dist\\rpc-entry.js",
+    settingsPreload: "file:///C:/pi/isolated-settings.mjs",
   })).toEqual({
     command: "C:\\Program Files\\nodejs\\node.exe",
-    args: ["C:\\pi\\dist\\rpc-entry.js", "--no-extensions"],
+    args: ["--import", "file:///C:/pi/isolated-settings.mjs", "C:\\pi\\dist\\rpc-entry.js", "--no-extensions"],
   });
   expect(resolvePiRpcLaunch(["--no-extensions"], {
     override: "D:\\tools\\custom-pi.exe",

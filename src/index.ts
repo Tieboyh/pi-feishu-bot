@@ -34,11 +34,13 @@ import { failureCard, finalMarkdownCard, THINKING_PROGRESS, toolProgress } from 
 import { isSubagentProcess } from "./runtime/agent-runtime.ts";
 import { RpcAgentSession, resolveSubagentsInstall } from "./runtime/rpc-agent-session.ts";
 import { initializeConversationOwned } from "./sessions/conversation-lifecycle.ts";
+import { executeModelControl } from "./sessions/model-control.ts";
 import { createGenerationIsCurrent, selectSafeIdleVictim, SerialCapacityGate } from "./sessions/conversation-pool.ts";
 import {
   emptySessionIndex,
   findManagedSession,
   formatSessionList,
+  formatSessionHelp,
   migrateSessionIndex,
   normalizeSessionName,
   parseSessionControlCommand,
@@ -257,6 +259,7 @@ export default function (pi: ExtensionAPI) {
 
   const conversations = new Map<string, Conversation>();
   const pendingTurns = new Set<PendingTurn>();
+  const pendingEnqueues = new Map<string, number>();
   let sessionIndex: SessionIndexV2 = emptySessionIndex();
   let indexWrite = Promise.resolve();
   const pendingNewNames = new Map<string, string>();
@@ -402,6 +405,7 @@ export default function (pi: ExtensionAPI) {
       cwd: botCwd,
       sessionDir: SESSION_DIR,
       savedPath: restorablePath,
+      selectedModel: activeSession?.model,
       onDeath: (dead) => {
         const owned = conversations.get(key);
         if (owned?.session === dead) {
@@ -605,8 +609,13 @@ export default function (pi: ExtensionAPI) {
       return;
     }
     const turn = createPendingTurn(msg.chatId, msg.messageId, msg.imageResources);
+    let reservationKey: string | undefined;
     try {
       const key = conversationKey(msg);
+      // Count work before asynchronous group-context fetching or RPC startup,
+      // so model/session commands cannot overtake an incoming message.
+      pendingEnqueues.set(key, (pendingEnqueues.get(key) ?? 0) + 1);
+      reservationKey = key;
       let groupContext: string | undefined;
       if (msg.chatType === "group" && groupContextMessages > 0) {
         try {
@@ -642,12 +651,18 @@ export default function (pi: ExtensionAPI) {
       await replaceTerminalCard(turn);
       pendingTurns.delete(turn);
       console.error("[feishu-bot] ❌ 消息入队失败:", error);
+    } finally {
+      if (reservationKey) {
+        const remaining = (pendingEnqueues.get(reservationKey) ?? 1) - 1;
+        if (remaining > 0) pendingEnqueues.set(reservationKey, remaining);
+        else pendingEnqueues.delete(reservationKey);
+      }
     }
   }
 
   function requireIdleConversation(key: string): Conversation | undefined {
     const conversation = conversations.get(key);
-    if (conversation && (conversation.active !== null || conversation.queuedTurnCount > 0 || !conversation.session.isSafeToEvict())) {
+    if ((pendingEnqueues.get(key) ?? 0) > 0 || (conversation && (conversation.active !== null || conversation.queuedTurnCount > 0 || !conversation.session.isSafeToEvict()))) {
       throw new Error("当前会话仍有任务正在处理，请等待完成后再管理会话。");
     }
     return conversation;
@@ -697,6 +712,39 @@ export default function (pi: ExtensionAPI) {
     const key = conversationKey(msg);
     const reply = async (text: string) => safeSend({ text }, msg.chatId, msg.messageId);
     try {
+      if (command.type === "help") {
+        await reply(formatSessionHelp(command.error));
+        return;
+      }
+      if (command.type === "model" || command.type === "models") {
+        const generation = lifecycleGeneration;
+        const result = await capacityGate.run(async () => {
+          if (!createGenerationIsCurrent(shuttingDown, generation, lifecycleGeneration)) throw new Error("机器人正在重启");
+          const conversation = requireIdleConversation(key) ?? await createConversation(key, generation);
+          // Pin the runtime across multiple RPC requests (idle sweeping is not
+          // gated); message reservations and session switches use this gate too.
+          conversation.queuedTurnCount++;
+          try {
+            return await executeModelControl(conversation.session, command, async (model) => {
+              try {
+                await mutateSessionIndex((index) => {
+                  const chat = index.chats[key];
+                  const current = chat?.sessions.find((entry) => entry.id === chat.activeId);
+                  if (!current) throw new Error("当前会话不存在");
+                  current.model = model;
+                });
+              } catch {
+                throw new Error("模型已选择，但会话配置保存失败；请重新发送切换命令后再重启。");
+              }
+            });
+          } finally {
+            conversation.queuedTurnCount--;
+            conversation.lastUsedAt = Date.now();
+          }
+        });
+        await reply(result);
+        return;
+      }
       if (command.type === "list") {
         await reply(formatSessionList(getChatState(key)));
         return;
@@ -716,16 +764,16 @@ export default function (pi: ExtensionAPI) {
       }
       if (command.type === "delete") {
         const target = findManagedSession(getChatState(key), command.target);
-        if (!target) throw new Error(`找不到会话「${command.target}」。请先说“查看历史会话”。`);
+        if (!target) throw new Error(`找不到会话「${command.target}」。请先发送 /list。`);
         pendingDeletes.set(key, { sessionId: target.id, senderId: msg.senderId, expiresAt: Date.now() + 5 * 60_000 });
-        await reply(`⚠️ 删除会话「${target.name}」将永久删除其上下文。\n请在 5 分钟内回复：“确认删除会话 ${target.name}”\n回复“取消删除”可取消。`);
+        await reply(`⚠️ 删除会话「${target.name}」将永久删除其上下文。\n请在 5 分钟内回复：/confirm ${target.id.slice(0, 8)}\n回复 /cancel 可取消。`);
         return;
       }
       if (command.type === "confirm-delete") {
         const pending = pendingDeletes.get(key);
         if (!pending || pending.senderId !== msg.senderId || pending.expiresAt < Date.now()) {
           pendingDeletes.delete(key);
-          throw new Error("没有有效的待确认删除操作，请先说“删除会话 会话名”。");
+          throw new Error("没有有效的待确认删除操作，请先发送 /delete <名称或短 ID>。");
         }
         const chat = getChatState(key);
         const target = chat?.sessions.find((entry) => entry.id === pending.sessionId);
@@ -763,7 +811,7 @@ export default function (pi: ExtensionAPI) {
       }
       if (command.type === "switch") {
         const target = findManagedSession(getChatState(key), command.target);
-        if (!target) throw new Error(`找不到会话「${command.target}」。请先说“查看历史会话”。`);
+        if (!target) throw new Error(`找不到会话「${command.target}」。请先发送 /list。`);
         const result = await capacityGate.run(() => switchManagedSession(key, target.id));
         await reply(result);
         return;
@@ -806,7 +854,7 @@ export default function (pi: ExtensionAPI) {
         await reply(`✅ 已创建并切换到新会话「${result}」，下一条普通消息将使用全新上下文。`);
       }
     } catch (error) {
-      await reply(`❌ 会话操作失败：${errorMessage(error)}`);
+      await reply(`❌ ${command.type === "model" || command.type === "models" ? "模型" : "会话"}操作失败：${errorMessage(error)}`);
     }
   }
 
