@@ -85,6 +85,7 @@ test("default RPC launch uses the current Node and official rpc-entry while over
     execPath: "C:\\Program Files\\nodejs\\node.exe",
     rpcEntry: "C:\\pi\\dist\\rpc-entry.js",
     settingsPreload: "file:///C:/pi/isolated-settings.mjs",
+    runtime: "node",
   })).toEqual({
     command: "C:\\Program Files\\nodejs\\node.exe",
     args: ["--import", "file:///C:/pi/isolated-settings.mjs", "C:\\pi\\dist\\rpc-entry.js", "--no-extensions"],
@@ -97,6 +98,22 @@ test("default RPC launch uses the current Node and official rpc-entry while over
     command: "D:\\tools\\custom-pi.exe",
     args: ["--mode", "rpc", "--no-extensions"],
   });
+});
+
+test("Bun RPC uses its native filesystem preload rather than a Windows file URL", () => {
+  expect(resolvePiRpcLaunch(["--no-extensions"], {
+    override: null,
+    execPath: "C:\\Program Files\\bun\\bun.exe",
+    rpcEntry: "C:\\pi\\dist\\rpc-entry.js",
+    settingsPreload: "C:\\pi\\isolated-settings.mjs",
+    runtime: "bun",
+  })).toEqual({
+    command: "C:\\Program Files\\bun\\bun.exe",
+    args: ["--preload", "C:\\pi\\isolated-settings.mjs", "C:\\pi\\dist\\rpc-entry.js", "--no-extensions"],
+  });
+  const launch = resolvePiRpcLaunch([], { override: null, runtime: "bun" });
+  expect(launch.args[0]).toBe("--preload");
+  expect(launch.args[1]).not.toStartWith("file://");
 });
 
 test("default RPC creation does not require a pi command on PATH", async () => {

@@ -68,13 +68,18 @@ export function resolveSettingsPreload(): string {
 }
 export function resolvePiRpcLaunch(
   args: string[],
-  options: { override?: string | null; execPath?: string; rpcEntry?: string; settingsPreload?: string } = {},
+  options: { override?: string | null; execPath?: string; rpcEntry?: string; settingsPreload?: string; runtime?: "node" | "bun" } = {},
 ): { command: string; args: string[] } {
   const override = options.override === undefined ? process.env.PI_SUBAGENT_PI_BINARY : options.override;
   if (override) return { command: override, args: ["--mode", "rpc", ...args] };
+  const runtime = options.runtime ?? (process.versions.bun ? "bun" : "node");
+  // Node resolves --import as an ESM URL; Bun's native preload resolver needs
+  // a filesystem path on Windows rather than a file:// drive URL.
+  const preload = options.settingsPreload ?? (runtime === "bun"
+    ? fileURLToPath(resolveSettingsPreload()) : resolveSettingsPreload());
   return {
     command: options.execPath ?? process.execPath,
-    args: ["--import", options.settingsPreload ?? resolveSettingsPreload(), options.rpcEntry ?? resolvePiRpcEntry(), ...args],
+    args: [runtime === "bun" ? "--preload" : "--import", preload, options.rpcEntry ?? resolvePiRpcEntry(), ...args],
   };
 }
 function childCeiling(): ResolvedSubagentCapabilityCeiling {
